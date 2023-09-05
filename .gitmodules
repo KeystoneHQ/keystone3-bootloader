@@ -1,0 +1,3 @@
+[submodule "external/ctaes"]
+	path = external/ctaes
+	url = https://github.com/bitcoin-core/ctaes

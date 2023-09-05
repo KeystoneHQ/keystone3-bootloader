@@ -1,0 +1,1 @@
+mkdir bin and mkdir obj manually when first time to make.
