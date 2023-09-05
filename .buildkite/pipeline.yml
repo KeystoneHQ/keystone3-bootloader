@@ -1,0 +1,26 @@
+- label: ":ecr: :docker: Release"
+  command: "ci/release.sh"
+  if: build.message =~ /release-base-image/
+  agents:
+    queue: keystone-production:build
+  concurrency: 1
+  concurrency_group: "keystone3-product-pillar-bootloader/build"
+  plugins:
+    - ecr#v2.3.0:
+        login: true
+        region: "eu-central-1"
+
+- label: ":shipit: build"
+  command: "ci/build.sh"
+  env:
+    ENV: production
+    AWS_DEFAULT_REGION: eu-central-1
+  agents:
+    queue: keystone-g3/production-test-build
+  # branches: "master"
+  concurrency: 1
+  concurrency_group: "keystone3-product-pillar-bootloader/release"
+  plugins:
+    - ecr#v2.3.0:
+        login: true
+        region: eu-central-1
