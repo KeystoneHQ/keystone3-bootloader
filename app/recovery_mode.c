@@ -29,7 +29,7 @@
 LV_FONT_DECLARE(openSans_20);
 LV_FONT_DECLARE(openSans_24);
 
-#define BOOTLOADER_VERSION              "v0.1.7"
+#define BOOTLOADER_VERSION              "v0.1.8"
 
 #define BUTTON_PORT                     GPIOE
 #define BUTTON_PIN                      GPIO_Pin_14
@@ -72,7 +72,7 @@ bool OptionToRecoveryMode(void)
 
     tick = 0;
     while (1) {
-        if (GPIO_ReadInputDataBit(BUTTON_PORT, BUTTON_PIN) == Bit_RESET && GPIO_ReadInputDataBit(USB_DET_PORT, USB_DET_PIN) == Bit_SET) {
+        if (GPIO_ReadInputDataBit(BUTTON_PORT, BUTTON_PIN) == Bit_RESET && GPIO_ReadInputDataBit(USB_DET_PORT, USB_DET_PIN) == Bit_RESET) {
             //Press button & Insert USB.
             tick++;
             if (tick > RECOVERY_MODE_WAIT_TICK) {
