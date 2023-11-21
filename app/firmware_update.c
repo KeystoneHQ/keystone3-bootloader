@@ -56,7 +56,7 @@ static uint8_t g_fileUnit[FILE_UNIT_SIZE + 16];
 static uint8_t g_dataUnit[DATA_UNIT_SIZE];
 
 static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath);
-static bool CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pHeadSize);
+static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pHeadSize);
 static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
 static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
 static int32_t GetIntValue(const cJSON *obj, const char *key);
@@ -65,9 +65,9 @@ static void GetStringValue(const cJSON *obj, const char *key, char *value, uint3
 static void GetSignatureValue(const cJSON *obj, char *output, uint32_t maxLength);
 static void GetUpdatePubKey(uint8_t *pubKey);
 const uint8_t g_defaultPubKey[] = {
-    0xD9, 0xA5, 0xDB, 0x68, 0x66, 0x36, 0x4B, 0x7F, 0x55, 0xCF, 0x6F, 0x3C, 0x19, 0x9A, 0x96, 0x26, 
-    0x5C, 0x6E, 0x71, 0x70, 0x87, 0xBE, 0x9D, 0xA8, 0xF4, 0x1D, 0xEA, 0xF5, 0x70, 0xBC, 0x7C, 0x2E, 
-    0x0D, 0x48, 0x4C, 0xB3, 0x9F, 0x0D, 0xDE, 0xFF, 0xB4, 0x17, 0xF9, 0x95, 0xF9, 0x14, 0x06, 0xCB, 
+    0xD9, 0xA5, 0xDB, 0x68, 0x66, 0x36, 0x4B, 0x7F, 0x55, 0xCF, 0x6F, 0x3C, 0x19, 0x9A, 0x96, 0x26,
+    0x5C, 0x6E, 0x71, 0x70, 0x87, 0xBE, 0x9D, 0xA8, 0xF4, 0x1D, 0xEA, 0xF5, 0x70, 0xBC, 0x7C, 0x2E,
+    0x0D, 0x48, 0x4C, 0xB3, 0x9F, 0x0D, 0xDE, 0xFF, 0xB4, 0x17, 0xF9, 0x95, 0xF9, 0x14, 0x06, 0xCB,
     0xF0, 0xE1, 0x56, 0x63, 0x9A, 0xD8, 0x05, 0x6D, 0x0E, 0xE3, 0x51, 0xC2, 0x58, 0x31, 0xF8, 0xD9
 };
 #endif
@@ -89,7 +89,7 @@ void CopyBin2Flash(void)
 
     if (CheckApp() == false) {
         updateType = UPDATE_TO_FACTORY_BIN;
-    } else if (CheckAppFactory()){
+    } else if (CheckAppFactory()) {
         updateType = UPDATE_TO_APP_BIN;
     } else {
         return;
@@ -120,7 +120,7 @@ void CopyBin2Flash(void)
             ret = FatfsFileCopy(SD_CARD_KETSTONE3_PATH, USB_KETSTONE3_PATH);
             if (ret == FR_OK) {
                 printf("copy keystone3.bin to usb success\r\n");
-            }    
+            }
         }
     }
 }
@@ -129,17 +129,37 @@ void CopyBin2Flash(void)
 /// @param
 void FirmwareUpdate(char *filePath)
 {
+    int32_t ret = SUCCESS_CODE;
     OtaFileInfo_t otaFileInfo = {0};
+    uint32_t c = 0x666666;
+    uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
     uint32_t headSize;
 
-    if (CheckOtaFile(&otaFileInfo, filePath, &headSize) == false) {
+    ret = CheckOtaFile(&otaFileInfo, filePath, &headSize);
+    if (ret != SUCCESS_CODE) {
+        if (ret == ERR_UPDATE_CHECK_FILE_EXIST) {
+            return;
+        }
+        LcdOpen();
         f_unlink(filePath);
+        if (ret == ERR_UPDATE_CHECK_CRC_FAILED) {
+            DrawStringOnLcd(160, 480, "check crc failed", 0xFFFF, &openSans_24);
+        } else if (ret == ERR_UPDATE_CHECK_SIGNATURE_FAILED) {
+            DrawStringOnLcd(115, 480, "check signature failed", 0xFFFF, &openSans_24);
+        }
+        UserDelay(3000);
         return;
     }
+
 #if (VERSION_CHECK_ENABLE == 1)
     if (CheckVersion(&otaFileInfo, filePath, headSize) == false) {
         printf("file %s version err\n", filePath);
+        char errBuf[128] = {0};
+        snprintf(errBuf, sizeof(errBuf), "file %s version err", filePath);
         f_unlink(filePath);
+        LcdOpen();
+        DrawStringOnLcd(125, 480, "check version failed", 0xFFFF, &openSans_24);
+        UserDelay(3000);
         return;
     }
 #endif
@@ -148,7 +168,9 @@ void FirmwareUpdate(char *filePath)
     OpenPower(POWER_TYPE_VCC33);
     LcdCheck();
     LcdInit();
-    DrawStringOnLcd(190, 480, "Installing", 0xFFFF, &openSans_24);
+    DrawStringOnLcd(190, 412, "Installing", 0xFFFF, &openSans_24);
+    DrawStringOnLcd(56, 460, "Please Keep the Device ON and Maintain", color, &openSans_20);
+    DrawStringOnLcd(175, 490, "Power Supply", color, &openSans_20);
     UserDelay(100);
     SetLcdBright(70);
     UpdateFromOtaFile(&otaFileInfo, filePath, headSize);
@@ -224,12 +246,12 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
     return headSize + 5;    //4 byte uint32 and 1 byte json string '\0' end.
 }
 
-static bool CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pHeadSize)
+static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pHeadSize)
 {
     FIL fp;
     int32_t ret;
     uint32_t fileSize, crcCalc, readSize, i, headSize;
-    bool bRet;
+    int32_t bRet = SUCCESS_CODE;
     sha256_context ctx;
 
     headSize = GetOtaFileInfo(info, filePath);
@@ -237,7 +259,7 @@ static bool CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pH
     ret = f_open(&fp, filePath, FA_OPEN_EXISTING | FA_READ);
     if (ret) {
         FatfsError((FRESULT)ret);
-        return false;
+        return ERR_UPDATE_CHECK_FILE_EXIST;
     }
     fileSize = f_size(&fp);
     printf("mark=%s\r\n", info->mark);
@@ -254,16 +276,16 @@ static bool CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pH
 #if (SIGNATURE_ENABLE == 1)
     printf("signature=%s\r\n", info->signature);
 #endif
-    bRet = true;
+    bRet = SUCCESS_CODE;
     do {
         if (fileSize != info->fileSize + headSize) {
             printf("file size err,fileSize=%d, info->fileSize=%d\r\n", fileSize, info->fileSize);
-            bRet = false;
+            bRet = ERR_UPDATE_CHECK_CRC_FAILED;
             break;
         }
         if (strcmp(info->mark, FILE_MARK_MCU_FIRMWARE) != 0) {
             printf("file info mark err\r\n");
-            bRet = false;
+            bRet = ERR_UPDATE_CHECK_CRC_FAILED;
             break;
         }
         printf("start to check file crc32\r\n");
@@ -276,7 +298,7 @@ static bool CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pH
             ret = f_read(&fp, &g_fileUnit, FILE_UNIT_SIZE, (UINT *)&readSize);
             if (ret) {
                 FatfsError((FRESULT)ret);
-                bRet = false;
+                bRet = ERR_UPDATE_CHECK_CRC_FAILED;
                 break;
             }
             //printf("i=%d,readSize=%d\r\n", i, readSize);
@@ -287,7 +309,7 @@ static bool CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pH
         PrintArray("hash content:", content_hash, 32);
         if (crcCalc != info->crc32) {
             printf("crc err,crcCalc=0x%08X,info->crc32=0x%08X\r\n", crcCalc, info->crc32);
-            bRet = false;
+            bRet = ERR_UPDATE_CHECK_CRC_FAILED;
             break;
         }
 
@@ -295,7 +317,7 @@ static bool CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pH
         printf("signature=%s\r\n", info->signature);
         if (strlen(info->signature) != 128) {
             printf("error signature=%s\r\n", info->signature);
-            bRet = false;
+            bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
             break;
         }
         // TODO: find this public key from firmware section.
@@ -304,7 +326,7 @@ static bool CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pH
         PrintArray("pubKey", publickey, 65);
         if (verify_frimware_signature(info->signature, content_hash, publickey) != true) {
             printf("signature check error\n");
-            bRet = false;
+            bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
             break;
         }
 #endif
@@ -350,13 +372,13 @@ static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32
     GetSoftwareVersionFormData(&fileMajor, &fileMinor, &fileBuild, g_dataUnit + FIXED_SEGMENT_OFFSET, decmpsdSize - FIXED_SEGMENT_OFFSET);
     printf("now version:%d.%d.%d\n", nowMajor, nowMinor, nowBuild);
     printf("file version:%d.%d.%d\n", fileMajor, fileMinor, fileBuild);
-    
+
     // each valid number should be from (0~99)
     uint32_t epoch = 100;
-    uint32_t nowVersionNumber =  (nowMajor * epoch * epoch)  + (nowMinor * epoch) + nowBuild;
+    uint32_t nowVersionNumber = (nowMajor * epoch * epoch)  + (nowMinor * epoch) + nowBuild;
     uint32_t fileVersionNumber = (fileMajor * epoch * epoch)  + (fileMinor * epoch) + fileBuild;
 
-    if(fileVersionNumber > nowVersionNumber) {
+    if (fileVersionNumber > nowVersionNumber) {
         return true;
     } else {
         return false;

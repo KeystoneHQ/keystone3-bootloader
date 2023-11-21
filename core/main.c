@@ -65,11 +65,11 @@ int _write(int fd, char *pBuffer, int size)
 {
     for (int i = 0; i < size; i++) {
         while (!UART_IsTXEmpty(UART0));
-        #ifdef __GNUC__
-            UART_SendData(UART0, '-');
-        #else
-            UART_SendData(UART0, (uint8_t) pBuffer[i]);
-        #endif
+#ifdef __GNUC__
+        UART_SendData(UART0, '-');
+#else
+        UART_SendData(UART0, (uint8_t) pBuffer[i]);
+#endif
     }
     return size;
 }
