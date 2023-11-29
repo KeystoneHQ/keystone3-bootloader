@@ -42,8 +42,8 @@ Alternatively, use Docker to build the required environment:
 docker build -t keystone3-boot:local .
 ```
 
-### Building the Firmware
-Here's how to build the Keystone3 Firmware:
+### Building the bootloader
+Here's how to build the Keystone3 bootloader:
 
 ```bash
 # Run the build script at the root of the project.
