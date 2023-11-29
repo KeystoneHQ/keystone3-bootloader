@@ -1,10 +1,3 @@
-/**************************************************************************************************
- * Copyright (c) keyst.one. 2020-2025. All rights reserved.
- * Description: QSPI flash driver.
- * Author: leon sun
- * Create: 2023-1-19
- ************************************************************************************************/
-
 #include "drv_qspi_flash.h"
 #include "stdio.h"
 #include "mhscpu.h"

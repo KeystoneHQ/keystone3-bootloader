@@ -1,10 +1,3 @@
-/**************************************************************************************************
- * Copyright (c) keyst.one. 2020-2025. All rights reserved.
- * Description: User delay.
- * Author: leon sun
- * Create: 2023-1-18
- ************************************************************************************************/
-
 #include "user_delay.h"
 #include "mhscpu.h"
 #include "stdio.h"

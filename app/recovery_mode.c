@@ -1,10 +1,3 @@
-/**************************************************************************************************
- * Copyright (c) Keystone. 2020-2025. All rights reserved.
- * Description: Check app flash zone data.
- * Author: leon sun
- * Create: 2023-7-24
- ************************************************************************************************/
-
 #include "recovery_mode.h"
 #include "string.h"
 #include "stdio.h"

@@ -1,10 +1,3 @@
-/**************************************************************************************************
- * Copyright (c) Keystone. 2020-2025. All rights reserved.
- * Description: Reduced graphic lib, supporting button and label.
- * Author: leon sun
- * Create: 2023-7-24
- ************************************************************************************************/
-
 #ifndef _REDUCED_GL_H
 #define _REDUCED_GL_H
 
