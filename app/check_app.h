@@ -1,11 +1,3 @@
-/**************************************************************************************************
- * Copyright (c) keyst.one. 2020-2025. All rights reserved.
- * Description: Check app flash zone data.
- * Author: leon sun
- * Create: 2023-7-11
- ************************************************************************************************/
-
-
 #ifndef _CHECK_APP_H
 #define _CHECK_APP_H
 
