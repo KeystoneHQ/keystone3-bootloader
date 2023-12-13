@@ -15,6 +15,7 @@ typedef struct {
     void (*Draw)(uint16_t xStart, uint16_t yStart, uint16_t xEnd, uint16_t yEnd, uint16_t *colors);
 } HalLcdOpt_t;
 
+void LcdOpen(void);
 void LcdCheck(void);
 void LcdInit(void);
 bool LcdBusy(void);

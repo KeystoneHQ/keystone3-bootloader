@@ -238,7 +238,9 @@ void FatfsDirectoryListing(char *ptr)
             acc_files++;
             acc_size += Finfo.fsize;
         }
-        printf("%c%c%c%c%c   %u/%02u/%02u   %02u:%02u %9lu  %s\r\n",
+
+        printf("%s:\n", Finfo.fname);
+        printf("%c%c%c%c%c   %u/%02u/%02u   %02u:%02u %9lu\r\n",
                (Finfo.fattrib & AM_DIR) ? 'd' : '-',
                (Finfo.fattrib & AM_RDO) ? 'r' : '-',
                (Finfo.fattrib & AM_HID) ? 'h' : '-',
@@ -246,7 +248,7 @@ void FatfsDirectoryListing(char *ptr)
                (Finfo.fattrib & AM_ARC) ? 'a' : '-',
                (Finfo.fdate >> 9) + 1980, (Finfo.fdate >> 5) & 15, Finfo.fdate & 31,
                (Finfo.ftime >> 11), (Finfo.ftime >> 5) & 63,
-               Finfo.fsize, Finfo.fname);
+               Finfo.fsize);
     }
 #if 0
     printf("%4u File(s),%10llu bytes total\r\n%4u Dir(s)", acc_files, acc_size, acc_dirs);

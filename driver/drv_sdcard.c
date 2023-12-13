@@ -6,6 +6,7 @@
 
 #include "drv_sys.h"
 #include "mhscpu_gpio.h"
+#include "user_delay.h"
 #pragma anon_unions
 
 SDCardInfoStruct SDCardInfo;
@@ -196,6 +197,7 @@ bool SDCardTransferBlock(bool isWrite, uint32_t address, uint8_t* buffer, uint32
     if (SDCardInfo.Capacity > SDCardCapacityStandard) {
         address /= 512;
         addressUnit = 1;
+        UserDelay(1);
     }
 
     if (SDCardInfo.Capacity <= SDCardCapacityStandard && !SDCardSetBlockLength(512))
@@ -215,12 +217,12 @@ bool SDCardTransferBlock(bool isWrite, uint32_t address, uint8_t* buffer, uint32
 }
 
 /**
- * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½SD_Init
- * ï¿½ï¿½ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½SDï¿½ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½ï¿½ï¿½ï¿½Ú¾ï¿½ï¿½ï¿½×´Ì¬(×¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)
- * ï¿½ï¿½ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½
- * ï¿½ï¿½ï¿½  ï¿½ï¿½-SD_Error SDï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
- *         ï¿½É¹ï¿½Ê±ï¿½ï¿½Îª SD_OK
- * ï¿½ï¿½ï¿½ï¿½  ï¿½ï¿½ï¿½â²¿ï¿½ï¿½ï¿½ï¿½
+ * SD_Init
+ *   ?SD????(?)
+ *   
+ *   -SD_Error SD
+ *         ??? SD_OK
+ *   ?
  */
 SD_Error SD_Init(void)
 {

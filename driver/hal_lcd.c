@@ -3,6 +3,7 @@
 #include "string.h"
 #include "drv_ili9806.h"
 #include "drv_nt35510.h"
+#include "drv_power.h"
 #include "drv_parallel8080.h"
 #include "hardware_version.h"
 //#include "user_memory.h"
@@ -27,6 +28,14 @@ void LcdInit(void)
     LcdFullScreen(0);
 }
 
+void LcdOpen(void)
+{
+    OpenPower(POWER_TYPE_VCC33);
+    LcdCheck();
+    LcdInit();
+    UserDelay(100);
+    SetLcdBright(70);
+}
 
 bool LcdBusy(void)
 {
