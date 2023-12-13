@@ -154,9 +154,9 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
             DrawStringOnLcd(120, 405, "the one in your SD card.", 0xFFFF, &openSans_20);
             break;
     }
-    for (int i = 0; i < 5; i++) {
-        sprintf(buff, "%d", 5 - i);
-        DrawStringOnLcd(234, 453, buff, 0xFFFF, &openSans_24);
+    for (int i = 0; i < 9; i++) {
+        sprintf(buff, "%d", 9 - i);
+        DrawStringOnLcd(234, 463, buff, 0xFFFF, &openSans_24);
         UserDelay(1000);
     }
 }
