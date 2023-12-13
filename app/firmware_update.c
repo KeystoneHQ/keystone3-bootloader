@@ -101,7 +101,6 @@ void CopyBin2Flash(void)
     if (FR_OK != MountSdFatfs()) {
         return;
     }
-    FatfsDirectoryListing("0:");
     LcdCheck();
     LcdInit();
     UserDelay(100);
@@ -143,22 +142,29 @@ void FirmwareUpdate(char *filePath)
         LcdOpen();
         f_unlink(filePath);
         if (ret == ERR_UPDATE_CHECK_CRC_FAILED) {
-            DrawStringOnLcd(160, 480, "check crc failed", 0xFFFF, &openSans_24);
+            DrawStringOnLcd(50, 440, "Firmware Integrity Exception: \nThe current firmware is incomplete. \nRe-download and retry the upgrade.", 0xFFFF, &openSans_20);
         } else if (ret == ERR_UPDATE_CHECK_SIGNATURE_FAILED) {
-            DrawStringOnLcd(115, 480, "check signature failed", 0xFFFF, &openSans_24);
+            DrawStringOnLcd(70, 440, "Firmware Signature Error: \nFirmware signature mismatch. \nDownload from the legitimate\nsource:", 0xFFFF, &openSans_24);
+            c = 0x1BE0C6;
+            color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+            DrawStringOnLcd(70, 575, "https://keyst.one/firmware.", color, &openSans_24);
         }
-        UserDelay(3000);
+        // for (int i = 0; i < 30; i++) {
+        //     UserDelay(1000);
+        //     char buff[127];
+        //     sprintf(buff, "delay %ds", 30 - i);
+        //     DrawStringOnLcd(70, 600, buff, color, &openSans_24);
+        // }
+
         return;
     }
 
 #if (VERSION_CHECK_ENABLE == 1)
     if (CheckVersion(&otaFileInfo, filePath, headSize) == false) {
         printf("file %s version err\n", filePath);
-        char errBuf[128] = {0};
-        snprintf(errBuf, sizeof(errBuf), "file %s version err", filePath);
         f_unlink(filePath);
         LcdOpen();
-        DrawStringOnLcd(125, 480, "check version failed", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(50, 480, "Update Version Mismatch: \nUnable to upgrade due to a lower version.\nCurrent device version exceeds the\navailable upgrade version.", 0xFFFF, &openSans_20);
         UserDelay(3000);
         return;
     }
@@ -169,6 +175,8 @@ void FirmwareUpdate(char *filePath)
     LcdCheck();
     LcdInit();
     DrawStringOnLcd(190, 412, "Installing", 0xFFFF, &openSans_24);
+    c = 0x666666;
+    color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
     DrawStringOnLcd(56, 460, "Please Keep the Device ON and Maintain", color, &openSans_20);
     DrawStringOnLcd(175, 490, "Power Supply", color, &openSans_20);
     UserDelay(100);
