@@ -181,19 +181,7 @@ static void WipeDeviceCallbackFunc(void)
     DS28S60_Init();
 
     lastPercent = 101;
-    DrawStringOnLcd(50, 200, "Erasing QSPI FLASH...", 0xFFFF, &openSans_20);
-    printf("Erasing QSPI FLASH...\n");
-    DrawStringOnLcd(215, 620, "            ", 0xFFFF, &openSans_24);
-    for (addr = APP_ADDR; addr < APP_ADDR + MAX_QSPI_FLASH_SIZE; addr += 4096) {
-        percent = (addr - APP_ADDR) * 100 / MAX_QSPI_FLASH_SIZE;
-        if (percent != lastPercent) {
-            lastPercent = percent;
-            sprintf(percentStr, "%d%%", percent);
-            DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
-            DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
-        }
-        QspiFlashErase(addr);
-    }
+
 
     DrawStringOnLcd(50, 280, "Erasing SPI FLASH...", 0xFFFF, &openSans_20);
     printf("Erasing SPI FLASH...\n");
@@ -226,6 +214,21 @@ static void WipeDeviceCallbackFunc(void)
         }
         DS28S60_HmacEncryptWrite(pageData, page);
     }
+
+    DrawStringOnLcd(50, 200, "Erasing QSPI FLASH...", 0xFFFF, &openSans_20);
+    printf("Erasing QSPI FLASH...\n");
+    DrawStringOnLcd(215, 620, "            ", 0xFFFF, &openSans_24);
+    for (addr = APP_ADDR; addr < APP_ADDR + MAX_QSPI_FLASH_SIZE; addr += 4096) {
+        percent = (addr - APP_ADDR) * 100 / MAX_QSPI_FLASH_SIZE;
+        if (percent != lastPercent) {
+            lastPercent = percent;
+            sprintf(percentStr, "%d%%", percent);
+            DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
+            DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
+        }
+        QspiFlashErase(addr);
+    }
+
     UserDelay(200);
     NVIC_SystemReset();
 }
