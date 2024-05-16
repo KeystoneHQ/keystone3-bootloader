@@ -1,5 +1,3 @@
-_estack = 0x20100000;
-
 MEMORY
 {
 	FLASH (rx)  : ORIGIN = 0x01001000, LENGTH = 0xF00000
@@ -33,6 +31,13 @@ SECTIONS
 		*(.data*)
 		_edata = .;
 	} > SRAM
+
+    .stack_guard :
+    {
+        . = ALIGN(4);
+        . = . + 0x400;
+        _stack_guard_start = .;
+    } > SRAM
 
     .stack : 
     {
