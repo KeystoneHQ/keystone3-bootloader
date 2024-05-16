@@ -34,6 +34,13 @@ SECTIONS
 		_edata = .;
 	} > SRAM
 
+    .stack_guard :
+    {
+        . = ALIGN(4);
+        . = . + 0x400;
+        _stack_guard_start = .;
+    } > SRAM
+
     .stack : 
     {
         . = ALIGN(4);
