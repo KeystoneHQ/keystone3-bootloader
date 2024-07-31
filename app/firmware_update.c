@@ -259,9 +259,7 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
             printf("read err,readSize=%d,headSize=%d\r\n", readSize, headSize);
             break;
         }
-        PrintArray("read from keystone3.bin....", (uint8_t *)headJsonStr, headSize);
         memcpy(info->mark, headJsonStr, 8);
-        printf("mark=%s\r\n", info->mark);
         info->fileSize = BytesToUint32BE(headJsonStr + FILE_SIZE_OFFSET);
         info->originalFileSize = BytesToUint32BE(headJsonStr + ORIGINAL_FILE_SIZE_OFFSET);
         info->crc32 = BytesToUint32BE(headJsonStr + CRC32_OFFSET);
@@ -614,10 +612,6 @@ static uint32_t BinarySearchLastNonFFSector(void)
     uint8_t percent = 1;
 
     for (int i = startIndex + 1; i < endIndex; i++) {
-        // if (g_stopCalChecksum == true) {
-            // vPortFree(buffer);
-            // return 0;
-        // }
         memcpy(buffer, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), SECTOR_SIZE);
         if ((i - startIndex) % 200 == 0) {
             percent++;
