@@ -56,6 +56,11 @@ int main(void)
     if (CheckApp() == false) {
         RecoveryMode();
     }
+    
+#if (SIGNATURE_ENABLE == 1)
+    CalculateCheckSum();
+#endif
+
     JumpToApp();
     while (1);
 }
@@ -66,7 +71,8 @@ int _write(int fd, char *pBuffer, int size)
     for (int i = 0; i < size; i++) {
         while (!UART_IsTXEmpty(UART0));
 #ifdef __GNUC__
-        UART_SendData(UART0, '-');
+        // UART_SendData(UART0, '-');
+        UART_SendData(UART0, (uint8_t) pBuffer[i]);
 #else
         UART_SendData(UART0, (uint8_t) pBuffer[i]);
 #endif

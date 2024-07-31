@@ -21,9 +21,9 @@ static void AddWidget(uint16_t x, uint16_t y, WidgetType type, void *widget);
 static void SetAllWidgetsRefresh(void);
 static void WaitUntilDmaNotBusy(void);
 static void DrawWidgets(void);
+static void DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
 static void DrawButton(WidgetButton_t *pButton, uint16_t x, uint16_t y);
 static void DrawLabel(WidgetLabel_t *pLabel, uint16_t x, uint16_t y);
-static void DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
 static void DrawText(uint16_t x, uint16_t y, const char *text, uint16_t color, uint16_t bgColor, const lv_font_t *font);
 static uint16_t GetTextWidth(const char *text, const lv_font_t *font);
 static void DrawLetter(uint16_t x, uint16_t y, uint16_t width, uint16_t height, lv_font_glyph_dsc_t *dsc, const uint8_t *map_p, uint16_t color, uint16_t bgColor);
@@ -239,6 +239,17 @@ static void DrawWidgets(void)
         }
         node = node->next;
     }
+}
+
+void SimpleDrawButton(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t buttonColor, const char *text)
+{
+    uint16_t textX, textY, textPixelLen;
+
+    textPixelLen = GetTextWidth(text, &openSans_20);
+    textX = w > textPixelLen ? x + (w - textPixelLen) / 2 : x;
+    textY = h > lv_font_get_line_height(&openSans_20) ? y + (h - lv_font_get_line_height(&openSans_20)) / 2 : y;
+    DrawRect(x, y, w, h, buttonColor);
+    DrawText(textX, textY, text, 0xFFFF, buttonColor, &openSans_20);
 }
 
 

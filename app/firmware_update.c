@@ -20,16 +20,8 @@
 #include "mhscpu.h"
 #include "drv_otp.h"
 #include "user_utils.h"
-
-
-#ifdef __GNUC__
-#define SIGNATURE_ENABLE        1
-#define VERSION_CHECK_ENABLE    1
-#else
-#define SIGNATURE_ENABLE        0
-#define VERSION_CHECK_ENABLE    0
-#endif
-
+#include "hal_touch.h"
+#include "reduced_gl.h"
 
 #if (SIGNATURE_ENABLE == 1)
 #include "librust_c.h"
@@ -38,6 +30,18 @@
 LV_FONT_DECLARE(openSans_20);
 LV_FONT_DECLARE(openSans_24);
 
+enum {
+    MARK_OFFSET = 0,
+    FILE_SIZE_OFFSET = 8,
+    ORIGINAL_FILE_SIZE_OFFSET = 12,
+    CRC32_OFFSET = 16,
+    ORIGINAL_CRC32_OFFSET = 20,
+    ENCODE_OFFSET = 24,
+    ENCODE_UNIT_OFFSET = 28,
+    ENCRYPT_OFFSET = 32,
+    SIGNATURE_OFFSET = 36,
+    ORIGINAL_SIGNATURE_OFFSET = 164,
+};
 
 #define FILE_MARK_MCU_FIRMWARE              "~update!"
 
@@ -52,9 +56,15 @@ LV_FONT_DECLARE(openSans_24);
 #define SD_CARD_KETSTONE3_PATH              "0:keystone3.bin"
 #define USB_KETSTONE3_PATH                  "1:keystone3.bin"
 
+#define SECTOR_SIZE                         4096
+#define APP_ADDR                            (0x1001000 + 0x80000)   //108 1000
+#define APP_CHECK_START_ADDR                (0x1400000)
+#define APP_END_ADDR                        (0x2000000)
+
 static uint8_t g_fileUnit[FILE_UNIT_SIZE + 16];
 static uint8_t g_dataUnit[DATA_UNIT_SIZE];
 
+static uint32_t BytesToUint32BE(uint8_t *bytes);
 static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath);
 static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pHeadSize);
 static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
@@ -153,6 +163,8 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
             DrawStringOnLcd(36, 375, "Your device firmware version is higher than", 0xFFFF, &openSans_20);
             DrawStringOnLcd(120, 405, "the one in your SD card.", 0xFFFF, &openSans_20);
             break;
+        default:
+            break;
     }
     for (int i = 0; i < 9; i++) {
         sprintf(buff, "%d", 9 - i);
@@ -247,6 +259,29 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
             printf("read err,readSize=%d,headSize=%d\r\n", readSize, headSize);
             break;
         }
+        PrintArray("read from keystone3.bin....", (uint8_t *)headJsonStr, headSize);
+        memcpy(info->mark, headJsonStr, 8);
+        printf("mark=%s\r\n", info->mark);
+        info->fileSize = BytesToUint32BE(headJsonStr + FILE_SIZE_OFFSET);
+        info->originalFileSize = BytesToUint32BE(headJsonStr + ORIGINAL_FILE_SIZE_OFFSET);
+        info->crc32 = BytesToUint32BE(headJsonStr + CRC32_OFFSET);
+        info->originalCrc32 = BytesToUint32BE(headJsonStr + ORIGINAL_CRC32_OFFSET);
+        info->encode = BytesToUint32BE(headJsonStr + ENCODE_OFFSET);
+        info->encodeUnit = BytesToUint32BE(headJsonStr + ENCODE_UNIT_OFFSET);
+        info->encrypt = BytesToUint32BE(headJsonStr + ENCRYPT_OFFSET);
+        printf("info->fileSize=%d\r\n", info->fileSize);
+        printf("info->originalFileSize=%d\r\n", info->originalFileSize);
+        printf("info->crc32=0x%08X\r\n", info->crc32);
+        printf("info->originalCrc32=0x%08X\r\n", info->originalCrc32);
+        printf("info->encode=%d\r\n", info->encode);
+        printf("info->encodeUnit=%d\r\n", info->encodeUnit);
+        printf("info->encrypt=%d\r\n", info->encrypt);
+        memcpy(info->signature, headJsonStr + SIGNATURE_OFFSET, SIGNATURE_LEN);
+        printf("info->signature=%s\r\n", info->signature);
+        memcpy(info->originalSignature, headJsonStr + ORIGINAL_SIGNATURE_OFFSET, SIGNATURE_LEN);
+        printf("info->originalSignature=%s\r\n", info->originalSignature);
+        // RecoveryMode();
+        #if 0
         headJsonStr[headSize] = '\0';
         printf("headJsonStr=%s\r\n", headJsonStr);
         jsonRoot = cJSON_Parse(headJsonStr);
@@ -268,6 +303,7 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
         info->originalBriefSize = GetIntValue(jsonRoot, "originalBriefSize");
         info->originalBriefCrc32 = GetIntValue(jsonRoot, "originalBriefCrc32");
         cJSON_Delete(jsonRoot);
+        #endif
     } while (0);
     if (headJsonStr != NULL) {
         vPortFree(headJsonStr);
@@ -472,6 +508,11 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
     printf("info->originalCrc32=0x%08X,crcCalc=0x%08X\r\n", info->originalCrc32, crcCalc);
     if (info->originalCrc32 == crcCalc) {
         printf("update success\r\n");
+        char *signature = pvPortMalloc(4096);
+        memcpy(signature, info->originalSignature, sizeof(info->originalSignature));
+        QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+        memset(signature, 0, 4096);
+        vPortFree(signature);
     }
 }
 
@@ -563,5 +604,96 @@ static void GetUpdatePubKey(uint8_t *pubKey)
     memset(data, 0, UPDATE_PUB_KEY_LEN);
     memcpy(pubKey + 1, g_defaultPubKey, sizeof(g_defaultPubKey));
 }
+
+static uint32_t BinarySearchLastNonFFSector(void)
+{
+    uint8_t *buffer = pvPortMalloc(SECTOR_SIZE);
+    uint32_t startIndex = (APP_CHECK_START_ADDR - APP_ADDR) / SECTOR_SIZE;
+    uint32_t endIndex = (APP_END_ADDR - APP_ADDR) / SECTOR_SIZE;
+
+    uint8_t percent = 1;
+
+    for (int i = startIndex + 1; i < endIndex; i++) {
+        // if (g_stopCalChecksum == true) {
+            // vPortFree(buffer);
+            // return 0;
+        // }
+        memcpy(buffer, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), SECTOR_SIZE);
+        if ((i - startIndex) % 200 == 0) {
+            percent++;
+        }
+        if (CheckAllFF(&buffer[2], SECTOR_SIZE - 2) && ((buffer[0] * 256 + buffer[1]) < 4096)) {
+            vPortFree(buffer);
+            return i;
+        }
+    }
+    vPortFree(buffer);
+    return -1;
+}
+
+int32_t CalculateCheckSum(void)
+{
+    uint8_t buffer[SECTOR_SIZE] = {0};
+    uint8_t hash[32] = {0};
+    TouchStatus_t point;
+    static uint32_t lastPercent = 101;
+    char percentStr[16] = {0};
+    uint8_t percent = 0;
+    sprintf(percentStr, "%d%%", percent);
+    int num = BinarySearchLastNonFFSector();
+    LcdOpen();
+    DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
+    TouchInit(NULL);
+    uint16_t xStart = 100, yStart = 500;
+    SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0, 0, 0xFF), "Skip");
+    uint32_t c = 0x666666;
+    uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+    DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
+    DrawProgressBarOnLcd(80, 594, 320, 9, 0, 0x21F4);
+
+    sha256_context ctx;
+    sha256_init(&ctx);
+    for (int i = 0; i <= num; i++) {
+        memset(buffer, 0, SECTOR_SIZE);
+        memcpy(buffer, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), SECTOR_SIZE);
+        sha256_hash(&ctx, buffer, SECTOR_SIZE);
+        if (percent != i * 100 / num) {
+            percent = i * 100 / num;
+            sprintf(percentStr, "%d%%", percent);
+            DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
+            DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
+            lastPercent = percent;
+        }
+        TouchGetStatus(&point);
+        if (point.touch != 0) {
+            if (point.x > xStart && point.x < xStart + 400 && point.y > yStart && point.y < yStart + 200) {
+                return SUCCESS_CODE;
+            }
+        }
+    }
+    sha256_done(&ctx, hash);
+    uint8_t publickey[65] = {0};
+    GetUpdatePubKey(publickey);
+    char *signature = pvPortMalloc(256 + 1);
+    memcpy(signature, APP_END_ADDR - 4096, 256);
+    if (verify_frimware_signature(signature, hash, publickey) != true) {
+        printf("signature check error\n");
+        SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
+        while (1) {
+
+        }
+        return ERR_UPDATE_CHECK_SIGNATURE_FAILED;
+    } else {
+        printf("signature check ok\n");
+    }
+    vPortFree(signature);
+
+    memset(buffer, 0, SECTOR_SIZE);
+    return SUCCESS_CODE;
+}
 #endif
 
+static uint32_t BytesToUint32BE(uint8_t *bytes) 
+{
+    return (uint32_t)bytes[0] << 24 | (uint32_t)bytes[1] << 16 | (uint32_t)bytes[2] << 8 | (uint32_t)bytes[3];
+}
