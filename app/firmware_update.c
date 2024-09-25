@@ -34,13 +34,13 @@ enum {
     MARK_OFFSET = 0,
     FILE_SIZE_OFFSET = 8,
     ORIGINAL_FILE_SIZE_OFFSET = 12,
-    CRC32_OFFSET = 16,
-    ORIGINAL_CRC32_OFFSET = 20,
-    ENCODE_OFFSET = 24,
-    ENCODE_UNIT_OFFSET = 28,
-    ENCRYPT_OFFSET = 32,
-    SIGNATURE_OFFSET = 36,
-    ORIGINAL_SIGNATURE_OFFSET = 164,
+    HASH_OFFSET = 16,
+    ORIGINAL_HASH_OFFSET = 48,
+    ENCODE_OFFSET = 80,
+    ENCODE_UNIT_OFFSET = 84,
+    ENCRYPT_OFFSET = 88,
+    SIGNATURE_OFFSET = 92,
+    ORIGINAL_SIGNATURE_OFFSET = 92 + 128,
 };
 
 #define FILE_MARK_MCU_FIRMWARE              "~update!"
@@ -140,31 +140,31 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
     uint32_t c = 0x666666;
     uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
     switch (errCode) {
-        case ERR_UPDATE_CHECK_CRC_FAILED:
-            c = 0xF55831;
-            color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-            DrawStringOnLcd(130, 317, "Firmware Damaged", color, &openSans_24);
-            DrawStringOnLcd(73, 369, "The current firmware is incomplete.\nRe-download and retry the upgrade", 0xFFFF, &openSans_20);
-            break;
-        case ERR_UPDATE_CHECK_SIGNATURE_FAILED:
-            c = 0xF55831;
-            color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-            DrawStringOnLcd(90, 302, "Firmware Verification Failed", color, &openSans_24);
-            DrawStringOnLcd(98, 354, "Firmware signature mismatch.", 0xFFFF, &openSans_20);
-            DrawStringOnLcd(64, 384, "Download from the legitimate source:", 0xFFFF, &openSans_20);
-            c = 0x1BE0C6;
-            color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-            DrawStringOnLcd(115, 426, "https://keyst.one/firmware.", color, &openSans_20);
-            break;
-        case ERR_UPDATE_CHECK_VERSION_FAILED:
-            c = 0xF55831;
-            color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-            DrawStringOnLcd(160, 323, "Lower Version", color, &openSans_24);
-            DrawStringOnLcd(36, 375, "Your device firmware version is higher than", 0xFFFF, &openSans_20);
-            DrawStringOnLcd(120, 405, "the one in your SD card.", 0xFFFF, &openSans_20);
-            break;
-        default:
-            break;
+    case ERR_UPDATE_CHECK_CRC_FAILED:
+        c = 0xF55831;
+        color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+        DrawStringOnLcd(130, 317, "Firmware Damaged", color, &openSans_24);
+        DrawStringOnLcd(73, 369, "The current firmware is incomplete.\nRe-download and retry the upgrade", 0xFFFF, &openSans_20);
+        break;
+    case ERR_UPDATE_CHECK_SIGNATURE_FAILED:
+        c = 0xF55831;
+        color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+        DrawStringOnLcd(90, 302, "Firmware Verification Failed", color, &openSans_24);
+        DrawStringOnLcd(98, 354, "Firmware signature mismatch.", 0xFFFF, &openSans_20);
+        DrawStringOnLcd(64, 384, "Download from the legitimate source:", 0xFFFF, &openSans_20);
+        c = 0x1BE0C6;
+        color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+        DrawStringOnLcd(115, 426, "https://keyst.one/firmware.", color, &openSans_20);
+        break;
+    case ERR_UPDATE_CHECK_VERSION_FAILED:
+        c = 0xF55831;
+        color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+        DrawStringOnLcd(160, 323, "Lower Version", color, &openSans_24);
+        DrawStringOnLcd(36, 375, "Your device firmware version is higher than", 0xFFFF, &openSans_20);
+        DrawStringOnLcd(120, 405, "the one in your SD card.", 0xFFFF, &openSans_20);
+        break;
+    default:
+        break;
     }
     for (int i = 0; i < 9; i++) {
         sprintf(buff, "%d", 9 - i);
@@ -262,15 +262,15 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
         memcpy(info->mark, headJsonStr, 8);
         info->fileSize = BytesToUint32BE(headJsonStr + FILE_SIZE_OFFSET);
         info->originalFileSize = BytesToUint32BE(headJsonStr + ORIGINAL_FILE_SIZE_OFFSET);
-        info->crc32 = BytesToUint32BE(headJsonStr + CRC32_OFFSET);
-        info->originalCrc32 = BytesToUint32BE(headJsonStr + ORIGINAL_CRC32_OFFSET);
+        memcpy(info->hash, headJsonStr + HASH_OFFSET, 32);
+        memcpy(info->originalHash, headJsonStr + ORIGINAL_HASH_OFFSET, 32);
         info->encode = BytesToUint32BE(headJsonStr + ENCODE_OFFSET);
         info->encodeUnit = BytesToUint32BE(headJsonStr + ENCODE_UNIT_OFFSET);
         info->encrypt = BytesToUint32BE(headJsonStr + ENCRYPT_OFFSET);
         printf("info->fileSize=%d\r\n", info->fileSize);
         printf("info->originalFileSize=%d\r\n", info->originalFileSize);
-        printf("info->crc32=0x%08X\r\n", info->crc32);
-        printf("info->originalCrc32=0x%08X\r\n", info->originalCrc32);
+        PrintArray("info->hash", info->hash, 32);
+        PrintArray("info->originalHash", info->originalHash, 32);
         printf("info->encode=%d\r\n", info->encode);
         printf("info->encodeUnit=%d\r\n", info->encodeUnit);
         printf("info->encrypt=%d\r\n", info->encrypt);
@@ -279,7 +279,7 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
         memcpy(info->originalSignature, headJsonStr + ORIGINAL_SIGNATURE_OFFSET, SIGNATURE_LEN);
         printf("info->originalSignature=%s\r\n", info->originalSignature);
         // RecoveryMode();
-        #if 0
+#if 0
         headJsonStr[headSize] = '\0';
         printf("headJsonStr=%s\r\n", headJsonStr);
         jsonRoot = cJSON_Parse(headJsonStr);
@@ -301,7 +301,7 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
         info->originalBriefSize = GetIntValue(jsonRoot, "originalBriefSize");
         info->originalBriefCrc32 = GetIntValue(jsonRoot, "originalBriefCrc32");
         cJSON_Delete(jsonRoot);
-        #endif
+#endif
     } while (0);
     if (headJsonStr != NULL) {
         vPortFree(headJsonStr);
@@ -329,8 +329,8 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
     printf("mark=%s\r\n", info->mark);
     printf("fileSize=%d\r\n", info->fileSize);
     printf("originalFileSize=%d\r\n", info->originalFileSize);
-    printf("crc32=0x%08X\r\n", info->crc32);
-    printf("originalCrc32=0x%08X\r\n", info->originalCrc32);
+    PrintArray("hash", info->hash, 32);
+    PrintArray("originalHash", info->originalHash, 32);
     printf("encode=%d\r\n", info->encode);
     printf("encodeUnit=%d\r\n", info->encodeUnit);
     printf("encrypt=%d\r\n", info->encrypt);
@@ -354,7 +354,6 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
         }
         printf("start to check file crc32\r\n");
         f_lseek(&fp, headSize);
-        crcCalc = 0;
 
         sha256_init(&ctx);
         uint8_t content_hash[32];
@@ -365,14 +364,13 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
                 bRet = ERR_UPDATE_CHECK_CRC_FAILED;
                 break;
             }
-            //printf("i=%d,readSize=%d\r\n", i, readSize);
-            crcCalc = crc32_ieee(crcCalc, g_fileUnit, readSize);
             sha256_hash(&ctx, g_fileUnit, readSize);
         }
         sha256_done(&ctx, content_hash);
         PrintArray("hash content:", content_hash, 32);
-        if (crcCalc != info->crc32) {
-            printf("crc err,crcCalc=0x%08X,info->crc32=0x%08X\r\n", crcCalc, info->crc32);
+        if (memcmp(content_hash, info->hash, 32) != 0) {
+            PrintArray("hash content:", content_hash, 32);
+            PrintArray("hash info:", info->hash, 32);
             bRet = ERR_UPDATE_CHECK_CRC_FAILED;
             break;
         }
@@ -454,10 +452,12 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
 {
     FIL fp;
     int32_t ret;
-    uint32_t fileSize, crcCalc, readSize, i, offset, cmpsdSize, decmpsdSize, writeAddr, percent;
+    uint32_t fileSize, readSize, i, offset, cmpsdSize, decmpsdSize, writeAddr, percent;
+    sha256_context ctx;
     qlz_state_decompress qlzState = {0};
     static uint32_t lastPercent = 101;
     char percentStr[16];
+    uint8_t content_hash[32];
 
     DrawStringOnLcd(215, 620, "0%", 0xFFFF, &openSans_24);
     DrawProgressBarOnLcd(80, 594, 320, 9, 0, 0x21F4);
@@ -466,9 +466,10 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
         FatfsError((FRESULT)ret);
         return;
     }
+    sha256_init(&ctx);
+
     fileSize = f_size(&fp);
     f_lseek(&fp, headSize);
-    crcCalc = 0;
     writeAddr = APP_ADDR;
     for (i = headSize; i < fileSize;) {
         ret = f_read(&fp, g_fileUnit, 16, (UINT *)&readSize);
@@ -488,7 +489,7 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
             return;
         }
         qlz_decompress((char*)g_fileUnit, g_dataUnit, &qlzState);
-        crcCalc = crc32_ieee(crcCalc, g_dataUnit, decmpsdSize);
+        sha256_hash(&ctx, g_dataUnit, decmpsdSize);
         for (offset = 0; offset < decmpsdSize; offset += 4096) {
             QspiFlashEraseAndWrite(writeAddr, g_dataUnit + offset, 4096);
             writeAddr += 4096;
@@ -503,8 +504,10 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
             lastPercent = percent;
         }
     }
-    printf("info->originalCrc32=0x%08X,crcCalc=0x%08X\r\n", info->originalCrc32, crcCalc);
-    if (info->originalCrc32 == crcCalc) {
+    sha256_done(&ctx, content_hash);
+    PrintArray("content_hash", content_hash, 32);
+    PrintArray("originalHash", info->originalHash, 32);
+    if (memcmp(content_hash, info->originalHash, 32) != 0) {
         printf("update success\r\n");
         char *signature = pvPortMalloc(4096);
         memcpy(signature, info->originalSignature, sizeof(info->originalSignature));
@@ -687,7 +690,7 @@ int32_t CalculateCheckSum(void)
 }
 #endif
 
-static uint32_t BytesToUint32BE(uint8_t *bytes) 
+static uint32_t BytesToUint32BE(uint8_t *bytes)
 {
     return (uint32_t)bytes[0] << 24 | (uint32_t)bytes[1] << 16 | (uint32_t)bytes[2] << 8 | (uint32_t)bytes[3];
 }

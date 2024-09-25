@@ -23,8 +23,8 @@ typedef struct {
     char mark[OTA_FILE_INFO_MARK_MAX_LEN];
     uint32_t fileSize;
     uint32_t originalFileSize;
-    uint32_t crc32;
-    uint32_t originalCrc32;
+    uint8_t hash[32];
+    uint8_t originalHash[32];
     uint32_t encode;
     uint32_t encodeUnit;
     uint32_t encrypt;
