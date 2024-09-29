@@ -35,6 +35,8 @@ LV_FONT_DECLARE(openSans_24);
 #define MAX_QSPI_FLASH_SIZE             (16 * 1024 * 1024 - 0x81000)
 #define MAX_SPI_FLASH_SIZE              (16 * 1024 * 1024)
 
+#define APP_VERSION_ADDR                0x01082000
+
 static void RecoveryModeMainMenu(void);
 static void PowerOffMenu(void);
 static void WipeDeviceMenu(void);
@@ -191,6 +193,9 @@ static void WipeDeviceCallbackFunc(void)
             sprintf(percentStr, "%d%%", percent);
             DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
             DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
+        }
+        if (addr == APP_VERSION_ADDR) {
+            continue;
         }
         QspiFlashErase(addr);
     }

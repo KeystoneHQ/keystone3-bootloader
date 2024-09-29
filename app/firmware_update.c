@@ -20,8 +20,16 @@
 #include "mhscpu.h"
 #include "drv_otp.h"
 #include "user_utils.h"
-#include "hal_touch.h"
-#include "reduced_gl.h"
+#include "drv_gd25qxx.h"
+
+#ifdef __GNUC__
+#define SIGNATURE_ENABLE        1
+#define VERSION_CHECK_ENABLE    1
+#else
+#define SIGNATURE_ENABLE        0
+#define VERSION_CHECK_ENABLE    0
+#endif
+
 
 #if (SIGNATURE_ENABLE == 1)
 #include "librust_c.h"
@@ -440,8 +448,12 @@ static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32
     uint32_t nowVersionNumber = (nowMajor * epoch * epoch)  + (nowMinor * epoch) + nowBuild;
     uint32_t fileVersionNumber = (fileMajor * epoch * epoch)  + (fileMinor * epoch) + fileBuild;
 
-    if (fileVersionNumber > nowVersionNumber) {
+    if (nowMajor == 99 && nowMinor == 99 && nowBuild == 99) {
         return true;
+    } else if (fileVersionNumber > nowVersionNumber) {
+        return true;
+    } else if (fileVersionNumber == nowVersionNumber) {
+        return !CheckAppExist();
     } else {
         return false;
     }
