@@ -21,15 +21,7 @@
 #include "drv_otp.h"
 #include "user_utils.h"
 #include "drv_gd25qxx.h"
-
-#ifdef __GNUC__
-#define SIGNATURE_ENABLE        1
-#define VERSION_CHECK_ENABLE    1
-#else
-#define SIGNATURE_ENABLE        0
-#define VERSION_CHECK_ENABLE    0
-#endif
-
+#include "hal_touch.h"
 
 #if (SIGNATURE_ENABLE == 1)
 #include "librust_c.h"

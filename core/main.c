@@ -53,7 +53,7 @@ int main(void)
     }
     FirmwareUpdate("1:pillar.bin");
     FirmwareUpdate("1:keystone3.bin");
-    if (CheckApp() == false) {
+    if (CheckApp() == false || CheckAppExist() == false) {
         RecoveryMode();
     }
     
