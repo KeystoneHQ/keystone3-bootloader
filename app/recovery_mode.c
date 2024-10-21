@@ -22,7 +22,7 @@
 LV_FONT_DECLARE(openSans_20);
 LV_FONT_DECLARE(openSans_24);
 
-#define BOOTLOADER_VERSION              "v0.1.9"
+#define BOOTLOADER_VERSION              "v0.2.0"
 
 #define BUTTON_PORT                     GPIOE
 #define BUTTON_PIN                      GPIO_Pin_14

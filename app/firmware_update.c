@@ -160,8 +160,8 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
         c = 0xF55831;
         color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
         DrawStringOnLcd(160, 323, "Lower Version", color, &openSans_24);
-        DrawStringOnLcd(36, 375, "Your device firmware version is higher than", 0xFFFF, &openSans_20);
-        DrawStringOnLcd(120, 405, "the one in your SD card.", 0xFFFF, &openSans_20);
+        DrawStringOnLcd(36, 375, "Make sure the new firmware version is higher", 0xFFFF, &openSans_20);
+        DrawStringOnLcd(90, 405, "than the current one on the device.", 0xFFFF, &openSans_20);
         break;
     default:
         break;
@@ -440,7 +440,7 @@ static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32
     uint32_t nowVersionNumber = (nowMajor * epoch * epoch)  + (nowMinor * epoch) + nowBuild;
     uint32_t fileVersionNumber = (fileMajor * epoch * epoch)  + (fileMinor * epoch) + fileBuild;
 
-    if (nowMajor == 99 && nowMinor == 99 && nowBuild == 99) {
+    if ((nowMajor == 99 && nowMinor == 99 && nowBuild == 99)) {
         return true;
     } else if (fileVersionNumber > nowVersionNumber) {
         return true;
@@ -511,12 +511,21 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
     sha256_done(&ctx, content_hash);
     PrintArray("content_hash", content_hash, 32);
     PrintArray("originalHash", info->originalHash, 32);
-    if (memcmp(content_hash, info->originalHash, 32) != 0) {
+    if (memcmp(content_hash, info->originalHash, 32) == 0) {
         printf("update success\r\n");
         char *signature = pvPortMalloc(4096);
         memcpy(signature, info->originalSignature, sizeof(info->originalSignature));
         QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+        printf("signature:%s\r\n", signature);
         memset(signature, 0, 4096);
+        vPortFree(signature);
+    } else {
+        printf("update failed\r\n");
+        char *signature = pvPortMalloc(4096);
+        for (int i = 0; i < 256; i++) {
+            signature[i] = i;
+        }
+        QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
         vPortFree(signature);
     }
 }
@@ -636,7 +645,6 @@ int32_t CalculateCheckSum(void)
 {
     uint8_t buffer[SECTOR_SIZE] = {0};
     uint8_t hash[32] = {0};
-    TouchStatus_t point;
     static uint32_t lastPercent = 101;
     char percentStr[16] = {0};
     uint8_t percent = 0;
@@ -644,9 +652,8 @@ int32_t CalculateCheckSum(void)
     int num = BinarySearchLastNonFFSector();
     LcdOpen();
     DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
-    TouchInit(NULL);
     uint16_t xStart = 100, yStart = 500;
-    SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0, 0, 0xFF), "Skip");
+    // SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0, 0, 0xFF), "Skip");
     uint32_t c = 0x666666;
     uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
     DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
@@ -665,19 +672,13 @@ int32_t CalculateCheckSum(void)
             DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
             lastPercent = percent;
         }
-        TouchGetStatus(&point);
-        if (point.touch != 0) {
-            if (point.x > xStart && point.x < xStart + 400 && point.y > yStart && point.y < yStart + 200) {
-                return SUCCESS_CODE;
-            }
-        }
     }
     sha256_done(&ctx, hash);
     uint8_t publickey[65] = {0};
     GetUpdatePubKey(publickey);
     char *signature = pvPortMalloc(256 + 1);
     memcpy(signature, APP_END_ADDR - 4096, 256);
-    if (verify_frimware_signature(signature, hash, publickey) != true) {
+    if (!verify_frimware_signature(signature, hash, publickey)) {
         printf("signature check error\n");
         SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
         while (1) {

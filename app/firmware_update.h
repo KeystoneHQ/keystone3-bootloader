@@ -15,7 +15,7 @@
 #define VERSION_CHECK_ENABLE    1   
 #else
 #define SIGNATURE_ENABLE        0
-#define VERSION_CHECK_ENABLE    1
+#define VERSION_CHECK_ENABLE    0
 #endif
 
 //OTA file head info.m
