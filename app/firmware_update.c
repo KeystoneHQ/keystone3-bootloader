@@ -446,6 +446,8 @@ static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32
         return true;
     } else if (fileVersionNumber == nowVersionNumber) {
         return !CheckAppExist();
+    } else if (fileMajor == 0 && fileMinor  == 0 && fileBuild == 1) {
+        return true;
     } else {
         return false;
     }
@@ -508,6 +510,7 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
             lastPercent = percent;
         }
     }
+
     sha256_done(&ctx, content_hash);
     PrintArray("content_hash", content_hash, 32);
     PrintArray("originalHash", info->originalHash, 32);
@@ -643,6 +646,13 @@ static uint32_t BinarySearchLastNonFFSector(void)
 
 int32_t CalculateCheckSum(void)
 {
+    uint32_t nowMajor, nowMinor, nowBuild;
+    GetSoftwareVersion(&nowMajor, &nowMinor, &nowBuild);
+
+    if (nowMajor == 0 && nowMinor  == 0 && nowBuild == 1) {
+        return SUCCESS_CODE;
+    }
+
     uint8_t buffer[SECTOR_SIZE] = {0};
     uint8_t hash[32] = {0};
     static uint32_t lastPercent = 101;
@@ -650,6 +660,7 @@ int32_t CalculateCheckSum(void)
     uint8_t percent = 0;
     sprintf(percentStr, "%d%%", percent);
     int num = BinarySearchLastNonFFSector();
+    printf("num = %d\n", num);
     LcdOpen();
     DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
     uint16_t xStart = 100, yStart = 500;
@@ -678,6 +689,7 @@ int32_t CalculateCheckSum(void)
     GetUpdatePubKey(publickey);
     char *signature = pvPortMalloc(256 + 1);
     memcpy(signature, APP_END_ADDR - 4096, 256);
+    printf("signature = %s.\n", signature);
     if (!verify_frimware_signature(signature, hash, publickey)) {
         printf("signature check error\n");
         SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
