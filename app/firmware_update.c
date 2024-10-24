@@ -446,8 +446,8 @@ static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32
         return true;
     } else if (fileVersionNumber == nowVersionNumber) {
         return !CheckAppExist();
-    } else if (fileMajor == 0 && fileMinor  == 0 && fileBuild == 1) {
-        return true;
+    // } else if (fileMajor == 0 && fileMinor  == 0 && fileBuild == 1) {
+    //     return true;
     } else {
         return false;
     }
@@ -504,7 +504,7 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
         percent = i * 100 / fileSize;
         if (percent != lastPercent) {
             printf("%d%%...\r\n", percent);
-            sprintf(percentStr, "%d%%", percent);
+            sprintf(percentStr, "%d%%", percent);   
             DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
             DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
             lastPercent = percent;
@@ -646,10 +646,7 @@ static uint32_t BinarySearchLastNonFFSector(void)
 
 int32_t CalculateCheckSum(void)
 {
-    uint32_t nowMajor, nowMinor, nowBuild;
-    GetSoftwareVersion(&nowMajor, &nowMinor, &nowBuild);
-
-    if (nowMajor == 0 && nowMinor  == 0 && nowBuild == 1) {
+    if (CheckAppFactory()) {
         return SUCCESS_CODE;
     }
 
@@ -660,7 +657,6 @@ int32_t CalculateCheckSum(void)
     uint8_t percent = 0;
     sprintf(percentStr, "%d%%", percent);
     int num = BinarySearchLastNonFFSector();
-    printf("num = %d\n", num);
     LcdOpen();
     DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
     uint16_t xStart = 100, yStart = 500;
@@ -689,7 +685,6 @@ int32_t CalculateCheckSum(void)
     GetUpdatePubKey(publickey);
     char *signature = pvPortMalloc(256 + 1);
     memcpy(signature, APP_END_ADDR - 4096, 256);
-    printf("signature = %s.\n", signature);
     if (!verify_frimware_signature(signature, hash, publickey)) {
         printf("signature check error\n");
         SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
