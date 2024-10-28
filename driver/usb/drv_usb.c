@@ -4,6 +4,7 @@
 #include "usbd_usr.h"
 
 __ALIGN_BEGIN USB_OTG_CORE_HANDLE g_usbDev __ALIGN_END;
+static bool g_isUsbInit = false;
 
 void UsbInit(void)
 {
@@ -22,6 +23,7 @@ void UsbInit(void)
 
     memset(&g_usbDev, 0x00, sizeof(g_usbDev));
 
+    g_isUsbInit = true;
     USBD_Init(&g_usbDev, USB_OTG_FS_CORE_ID, &USR_desc, DeviceCallback, &USRD_cb);
 }
 
@@ -40,7 +42,9 @@ void UsbLoop(void)
 
 void UsbDeInit(void)
 {
-    USBD_DeInit(&g_usbDev);
+    if (g_isUsbInit) {
+        USBD_DeInit(&g_usbDev);
+    }
 }
 
 

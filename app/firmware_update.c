@@ -22,6 +22,7 @@
 #include "user_utils.h"
 #include "drv_gd25qxx.h"
 #include "hal_touch.h"
+#include "recovery_mode.h"
 
 #if (SIGNATURE_ENABLE == 1)
 #include "librust_c.h"
@@ -644,11 +645,16 @@ static uint32_t BinarySearchLastNonFFSector(void)
     return -1;
 }
 
+void NotToDuFunc(void)
+{
+
+}
+
 int32_t CalculateCheckSum(void)
 {
-    if (CheckAppFactory()) {
-        return SUCCESS_CODE;
-    }
+    // if (CheckAppFactory()) {
+    //     return SUCCESS_CODE;
+    // }
 
     uint8_t buffer[SECTOR_SIZE] = {0};
     uint8_t hash[32] = {0};
@@ -656,46 +662,55 @@ int32_t CalculateCheckSum(void)
     char percentStr[16] = {0};
     uint8_t percent = 0;
     sprintf(percentStr, "%d%%", percent);
-    int num = BinarySearchLastNonFFSector();
-    LcdOpen();
-    DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
+    bool isOK = false;
     uint16_t xStart = 100, yStart = 500;
-    // SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0, 0, 0xFF), "Skip");
-    uint32_t c = 0x666666;
-    uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-    DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
-    DrawProgressBarOnLcd(80, 594, 320, 9, 0, 0x21F4);
-
-    sha256_context ctx;
-    sha256_init(&ctx);
-    for (int i = 0; i <= num; i++) {
-        memset(buffer, 0, SECTOR_SIZE);
-        memcpy(buffer, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), SECTOR_SIZE);
-        sha256_hash(&ctx, buffer, SECTOR_SIZE);
-        if (percent != i * 100 / num) {
-            percent = i * 100 / num;
-            sprintf(percentStr, "%d%%", percent);
-            DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
-            DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
-            lastPercent = percent;
+    do {
+        LcdOpen();
+        int num = BinarySearchLastNonFFSector();
+        if (num < 0) {
+        printf("%s %d..\n", __func__, __LINE__);
+            break;
         }
-    }
-    sha256_done(&ctx, hash);
-    uint8_t publickey[65] = {0};
-    GetUpdatePubKey(publickey);
-    char *signature = pvPortMalloc(256 + 1);
-    memcpy(signature, APP_END_ADDR - 4096, 256);
-    if (!verify_frimware_signature(signature, hash, publickey)) {
-        printf("signature check error\n");
-        SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
-        while (1) {
-
+        DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
+        uint32_t c = 0x666666;
+        uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+        DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
+        DrawProgressBarOnLcd(80, 594, 320, 9, 0, 0x21F4);
+        sha256_context ctx;
+        sha256_init(&ctx);
+        for (int i = 0; i <= num; i++) {
+            memset(buffer, 0, SECTOR_SIZE);
+            memcpy(buffer, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), SECTOR_SIZE);
+            sha256_hash(&ctx, buffer, SECTOR_SIZE);
+            if (percent != i * 100 / num) {
+                percent = i * 100 / num;
+                sprintf(percentStr, "%d%%", percent);
+                DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
+                DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
+                lastPercent = percent;
+            }
         }
-        return ERR_UPDATE_CHECK_SIGNATURE_FAILED;
-    } else {
-        printf("signature check ok\n");
+        sha256_done(&ctx, hash);
+        uint8_t publickey[65] = {0};
+        GetUpdatePubKey(publickey);
+        char *signature = pvPortMalloc(256 + 1);
+        memcpy(signature, APP_END_ADDR - 4096, 256);
+        if (!verify_frimware_signature(signature, hash, publickey)) {
+            printf("signature check error\n");
+        } else {
+            isOK = true;
+            printf("signature check ok\n");
+        }
+        vPortFree(signature);
+    } while (0);
+
+    if (!isOK) {
+        ReducedGlInit();
+        // SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
+        CreateButton(100, 420, 280, 60, _COLOR_MAKE(0xFF, 0, 0), _COLOR_MAKE(0, 0, 150), "firmware not secure", NotToDuFunc);
+        CreateButton(100, 500, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Wipe Device", WipeDeviceCallbackFunc);
+        EnterRecoveryMode();
     }
-    vPortFree(signature);
 
     memset(buffer, 0, SECTOR_SIZE);
     return SUCCESS_CODE;
