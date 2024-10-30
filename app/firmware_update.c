@@ -702,6 +702,7 @@ int32_t CalculateCheckSum(void)
         }
         vPortFree(signature);
     } while (0);
+    LcdFullScreen(0);
 
     if (!isOK) {
         ReducedGlInit();
