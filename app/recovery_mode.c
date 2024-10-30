@@ -174,13 +174,11 @@ void WipeDeviceCallbackFunc(void)
     uint32_t percent, lastPercent, addr;
     char percentStr[16];
     uint8_t pageData[32], page;
-    printf("%s %d..\n", __func__, __LINE__);
 
     UsbDeInit();
     DeleteAllWidgets();
     //CreateLabel(50, 120, 0xFFFF, "Wiping device now...");
     ReducedGlHandler();
-    printf("%s %d..\n", __func__, __LINE__);
     DrawStringOnLcd(50, 120, "Wiping device now...", 0xFFFF, &openSans_20);
     DS28S60_Init();
 

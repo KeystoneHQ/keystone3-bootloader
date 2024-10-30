@@ -668,7 +668,6 @@ int32_t CalculateCheckSum(void)
         LcdOpen();
         int num = BinarySearchLastNonFFSector();
         if (num < 0) {
-        printf("%s %d..\n", __func__, __LINE__);
             break;
         }
         DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
@@ -706,10 +705,19 @@ int32_t CalculateCheckSum(void)
 
     if (!isOK) {
         ReducedGlInit();
-        // SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
-        CreateButton(100, 420, 280, 60, _COLOR_MAKE(0xFF, 0, 0), _COLOR_MAKE(0, 0, 150), "firmware not secure", NotToDuFunc);
-        CreateButton(100, 500, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Wipe Device", WipeDeviceCallbackFunc);
-        EnterRecoveryMode();
+        SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
+        uint8_t cnt = 0;
+        char buff[32];
+        int i = 9;
+        while (1) {
+            sprintf(buff, "Wipe Device %d", i--);
+            if (i == 0) {
+                break;
+            }
+            SimpleDrawButton(180, 423, 130, 60, _COLOR_MAKE(0, 0, 0), buff);
+            UserDelay(1000);
+        }
+        WipeDeviceCallbackFunc();
     }
 
     memset(buffer, 0, SECTOR_SIZE);
