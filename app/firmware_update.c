@@ -652,9 +652,9 @@ void NotToDuFunc(void)
 
 int32_t CalculateCheckSum(void)
 {
-    // if (CheckAppFactory()) {
-    //     return SUCCESS_CODE;
-    // }
+    if (CheckAppFactory()) {
+        return SUCCESS_CODE;
+    }
 
     uint8_t buffer[SECTOR_SIZE] = {0};
     uint8_t hash[32] = {0};
