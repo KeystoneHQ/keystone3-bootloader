@@ -45,6 +45,7 @@ enum {
 };
 
 #define FILE_MARK_MCU_FIRMWARE              "~update!"
+#define FILE_MARK_MCU_FIRMWARE_2_0          "~fwdata!"
 
 #define FILE_UNIT_SIZE                      0x4000
 #define DATA_UNIT_SIZE                      0x4000
@@ -82,7 +83,6 @@ const uint8_t g_defaultPubKey[] = {
     0xF0, 0xE1, 0x56, 0x63, 0x9A, 0xD8, 0x05, 0x6D, 0x0E, 0xE3, 0x51, 0xC2, 0x58, 0x31, 0xF8, 0xD9
 };
 #endif
-
 
 typedef enum {
     UPDATE_TO_FACTORY_BIN,
@@ -163,6 +163,13 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
         DrawStringOnLcd(160, 323, "Lower Version", color, &openSans_24);
         DrawStringOnLcd(36, 375, "Make sure the new firmware version is higher", 0xFFFF, &openSans_20);
         DrawStringOnLcd(90, 405, "than the current one on the device.", 0xFFFF, &openSans_20);
+        break;
+    case ERR_UPDATE_CHECK_FILE_MARK_FAILED:
+        c = 0xF55831;
+        color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+        DrawStringOnLcd(160, 323, "Lower Version", color, &openSans_24);
+        DrawStringOnLcd(36, 375, "Make sure the version is higher than 2.0", color, &openSans_24);
+        DrawStringOnLcd(90, 405, "Please download the firmware version 2.0 or higher", 0xFFFF, &openSans_20);
         break;
     default:
         break;
@@ -348,9 +355,12 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
             bRet = ERR_UPDATE_CHECK_CRC_FAILED;
             break;
         }
-        if (strcmp(info->mark, FILE_MARK_MCU_FIRMWARE) != 0) {
+        if (strcmp(info->mark, FILE_MARK_MCU_FIRMWARE_2_0) != 0) {
             printf("file info mark err\r\n");
             bRet = ERR_UPDATE_CHECK_CRC_FAILED;
+            if (strcmp(info->mark, FILE_MARK_MCU_FIRMWARE) == 0) {
+                bRet = ERR_UPDATE_CHECK_FILE_MARK_FAILED;
+            }
             break;
         }
         printf("start to check file crc32\r\n");
@@ -446,9 +456,9 @@ static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32
     } else if (fileVersionNumber > nowVersionNumber) {
         return true;
     } else if (fileVersionNumber == nowVersionNumber) {
-        return !CheckAppExist();
-    // } else if (fileMajor == 0 && fileMinor  == 0 && fileBuild == 1) {
-    //     return true;
+        return CalculateCheckSum(true, info->originalHash);
+        // } else if (fileMajor == 0 && fileMinor  == 0 && fileBuild == 1) {
+        //     return true;
     } else {
         return false;
     }
@@ -505,7 +515,7 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
         percent = i * 100 / fileSize;
         if (percent != lastPercent) {
             printf("%d%%...\r\n", percent);
-            sprintf(percentStr, "%d%%", percent);   
+            sprintf(percentStr, "%d%%", percent);
             DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
             DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
             lastPercent = percent;
@@ -650,10 +660,10 @@ void NotToDuFunc(void)
 
 }
 
-int32_t CalculateCheckSum(void)
+bool CalculateCheckSum(bool checkSum, uint8_t *originalHash)
 {
     if (CheckAppFactory()) {
-        return SUCCESS_CODE;
+        return true;
     }
 
     uint8_t buffer[SECTOR_SIZE] = {0};
@@ -665,46 +675,65 @@ int32_t CalculateCheckSum(void)
     bool isOK = false;
     uint16_t xStart = 100, yStart = 500;
     do {
-        LcdOpen();
         int num = BinarySearchLastNonFFSector();
         if (num < 0) {
-            break;
+            if (checkSum) {
+                break;
+            } else {
+                return true;
+            }
         }
-        DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
-        uint32_t c = 0x666666;
-        uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-        DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
-        DrawProgressBarOnLcd(80, 594, 320, 9, 0, 0x21F4);
+        if (checkSum) {
+            LcdOpen();
+            DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
+            uint32_t c = 0x666666;
+            uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+            DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
+            DrawProgressBarOnLcd(80, 594, 320, 9, 0, 0x21F4);
+        }
         sha256_context ctx;
         sha256_init(&ctx);
         for (int i = 0; i <= num; i++) {
             memset(buffer, 0, SECTOR_SIZE);
             memcpy(buffer, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), SECTOR_SIZE);
             sha256_hash(&ctx, buffer, SECTOR_SIZE);
-            if (percent != i * 100 / num) {
-                percent = i * 100 / num;
-                sprintf(percentStr, "%d%%", percent);
-                DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
-                DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
-                lastPercent = percent;
+            if (checkSum) {
+                if (percent != i * 100 / num) {
+                    percent = i * 100 / num;
+                    sprintf(percentStr, "%d%%", percent);
+                    DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
+                    DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
+                    lastPercent = percent;
+                }
             }
         }
         sha256_done(&ctx, hash);
-        uint8_t publickey[65] = {0};
-        GetUpdatePubKey(publickey);
-        char *signature = pvPortMalloc(256 + 1);
-        memcpy(signature, APP_END_ADDR - 4096, 256);
-        if (!verify_frimware_signature(signature, hash, publickey)) {
-            printf("signature check error\n");
-        } else {
-            isOK = true;
-            printf("signature check ok\n");
+        if (!checkSum && originalHash != NULL) {
+            if (memcmp(hash, originalHash, 32) != 0) {
+                return true;
+            } else {
+                return false;
+            }
         }
-        vPortFree(signature);
+        if (checkSum) {
+            uint8_t publickey[65] = {0};
+            GetUpdatePubKey(publickey);
+            char *signature = pvPortMalloc(256 + 1);
+            memcpy(signature, APP_END_ADDR - 4096, 256);
+            if (!verify_frimware_signature(signature, hash, publickey)) {
+                printf("signature check error\n");
+            } else {
+                isOK = true;
+                printf("signature check ok\n");
+            }
+            vPortFree(signature);
+        }
     } while (0);
-    LcdFullScreen(0);
+    if (checkSum) {
+        LcdFullScreen(0);
+    }
 
-    if (!isOK) {
+    if (checkSum && !isOK) {
         ReducedGlInit();
         SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
         uint8_t cnt = 0;

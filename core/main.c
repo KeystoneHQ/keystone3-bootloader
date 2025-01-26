@@ -58,7 +58,7 @@ int main(void)
     }
     
 #if (SIGNATURE_ENABLE == 1)
-    CalculateCheckSum();
+    CalculateCheckSum(false);
 #endif
 
     JumpToApp();

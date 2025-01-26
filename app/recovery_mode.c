@@ -213,9 +213,6 @@ void WipeDeviceCallbackFunc(void)
             DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
             DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
         }
-        if (addr == APP_VERSION_ADDR && !CheckAppFactory()) {
-            continue;
-        }
         QspiFlashErase(addr);
     }
 
