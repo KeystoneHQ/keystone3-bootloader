@@ -41,7 +41,7 @@ int main(void)
     }
 #endif
     Uart0Init(CmdIsrRcvByte);
-    cm_backtrace_init("bootloader", "V1.0.0", "V1.0.0");
+    cm_backtrace_init("mh1903_boot", "V1.0.0", "V1.0.0");
     TrngInit();
     Gd25FlashInit();
     QspiFlashInit();
@@ -58,7 +58,7 @@ int main(void)
     }
     
 #if (SIGNATURE_ENABLE == 1)
-    CalculateCheckSum(false);
+    CalculateCheckSum(false, NULL);
 #endif
 
     JumpToApp();

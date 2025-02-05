@@ -44,6 +44,13 @@ enum {
     ORIGINAL_SIGNATURE_OFFSET = 92 + 128,
 };
 
+typedef enum {
+    CHECKSUM_SUCCESS = 0,
+    CHECKSUM_INVALID_SIGNATURE = 1,
+    CHECKSUM_HASH_MISMATCH = 2,
+    CHECKSUM_ERROR = 3
+} ChecksumResult_t;
+
 #define FILE_MARK_MCU_FIRMWARE              "~update!"
 #define FILE_MARK_MCU_FIRMWARE_2_0          "~fwdata!"
 
@@ -386,23 +393,23 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
             break;
         }
 
-#if (SIGNATURE_ENABLE == 1)
-        printf("signature=%s\r\n", info->signature);
-        if (strlen(info->signature) != 128) {
-            printf("error signature=%s\r\n", info->signature);
-            bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
-            break;
-        }
-        // TODO: find this public key from firmware section.
-        uint8_t publickey[65] = {0};
-        GetUpdatePubKey(publickey);
-        PrintArray("pubKey", publickey, 65);
-        if (verify_frimware_signature(info->signature, content_hash, publickey) != true) {
-            printf("signature check error\n");
-            bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
-            break;
-        }
-#endif
+// #if (SIGNATURE_ENABLE == 1)
+//         printf("signature=%s\r\n", info->signature);
+//         if (strlen(info->signature) != 128) {
+//             printf("error signature=%s\r\n", info->signature);
+//             bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
+//             break;
+//         }
+//         // TODO: find this public key from firmware section.
+//         uint8_t publickey[65] = {0};
+//         GetUpdatePubKey(publickey);
+//         PrintArray("pubKey", publickey, 65);
+//         if (verify_frimware_signature(info->signature, content_hash, publickey) != true) {
+//             printf("signature check error\n");
+//             bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
+//             break;
+//         }
+// #endif
     } while (0);
     f_close(&fp);
 
@@ -603,7 +610,6 @@ static void GetSignatureValue(const cJSON *obj, char *output, uint32_t maxLength
     printf("signature does not exist\r\n");
 }
 
-
 static void GetUpdatePubKey(uint8_t *pubKey)
 {
     uint8_t data[UPDATE_PUB_KEY_LEN];
@@ -633,6 +639,25 @@ static void GetUpdatePubKey(uint8_t *pubKey)
     memcpy(pubKey + 1, g_defaultPubKey, sizeof(g_defaultPubKey));
 }
 
+static bool VerifyFirmwareSignature(const uint8_t *hash)
+{
+    uint8_t publickey[65] = {0};
+    GetUpdatePubKey(publickey);
+
+    char *signature = pvPortMalloc(256 + 1);
+    if (signature == NULL) {
+        return false;
+    }
+
+    memcpy(signature, APP_END_ADDR - 4096, 256);
+    bool isOK = verify_frimware_signature(signature, hash, publickey);
+    vPortFree(signature);
+
+    return isOK;
+}
+#endif
+
+#if 1
 static uint32_t BinarySearchLastNonFFSector(void)
 {
     uint8_t *buffer = pvPortMalloc(SECTOR_SIZE);
@@ -660,98 +685,85 @@ void NotToDuFunc(void)
 
 }
 
-bool CalculateCheckSum(bool checkSum, uint8_t *originalHash)
+static bool CalculateFirmwareHash(uint8_t *hash, bool showProgress)
+{
+    uint8_t buffer[SECTOR_SIZE] = {0};
+    char percentStr[16] = {0};
+    uint8_t percent = 0;
+
+    int lastSector = BinarySearchLastNonFFSector();
+    if (lastSector < 0) {
+        return false;
+    }
+
+    sha256_context ctx;
+    sha256_init(&ctx);
+
+    for (int i = 0; i <= lastSector; i++) {
+        memset(buffer, 0, SECTOR_SIZE);
+        memcpy(buffer, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), SECTOR_SIZE);
+        sha256_hash(&ctx, buffer, SECTOR_SIZE);
+
+        if (showProgress) {
+            percent = i * 100 / lastSector;
+            snprintf(percentStr, sizeof(percentStr), "%d%%", percent);
+            DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
+            DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
+        }
+    }
+
+    sha256_done(&ctx, hash);
+    memset(buffer, 0, SECTOR_SIZE);
+    return true;
+}
+
+static void HandleFirmwareVerificationFailed(void)
+{
+    ReducedGlInit();
+    SimpleDrawButton(100, 500, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
+
+    for (int i = 9; i > 0; i--) {
+        char buff[32];
+        snprintf(buff, sizeof(buff), "Wipe Device %d", i);
+        SimpleDrawButton(180, 423, 130, 60, _COLOR_MAKE(0, 0, 0), buff);
+        UserDelay(1000);
+    }
+    WipeDeviceCallbackFunc();
+}
+
+bool CalculateCheckSum(bool checkSum, const uint8_t *originalHash)
 {
     if (CheckAppFactory()) {
         return true;
     }
 
-    uint8_t buffer[SECTOR_SIZE] = {0};
     uint8_t hash[32] = {0};
-    static uint32_t lastPercent = 101;
-    char percentStr[16] = {0};
-    uint8_t percent = 0;
-    sprintf(percentStr, "%d%%", percent);
-    bool isOK = false;
-    uint16_t xStart = 100, yStart = 500;
     do {
-        int num = BinarySearchLastNonFFSector();
-        if (num < 0) {
-            if (checkSum) {
-                break;
-            } else {
-                return true;
-            }
-        }
-        if (checkSum) {
+        if (!checkSum) {
             LcdOpen();
-            DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
-            uint32_t c = 0x666666;
-            uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-            DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
-            DrawProgressBarOnLcd(80, 594, 320, 9, 0, 0x21F4);
         }
-        sha256_context ctx;
-        sha256_init(&ctx);
-        for (int i = 0; i <= num; i++) {
-            memset(buffer, 0, SECTOR_SIZE);
-            memcpy(buffer, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), SECTOR_SIZE);
-            sha256_hash(&ctx, buffer, SECTOR_SIZE);
-            if (checkSum) {
-                if (percent != i * 100 / num) {
-                    percent = i * 100 / num;
-                    sprintf(percentStr, "%d%%", percent);
-                    DrawStringOnLcd(215, 620, percentStr, 0xFFFF, &openSans_24);
-                    DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
-                    lastPercent = percent;
-                }
-            }
+
+        if (!CalculateFirmwareHash(hash, !checkSum)) {
+            break;
         }
-        sha256_done(&ctx, hash);
-        if (!checkSum && originalHash != NULL) {
-            if (memcmp(hash, originalHash, 32) != 0) {
-                return true;
-            } else {
-                return false;
-            }
-        }
-        if (checkSum) {
-            uint8_t publickey[65] = {0};
-            GetUpdatePubKey(publickey);
-            char *signature = pvPortMalloc(256 + 1);
-            memcpy(signature, APP_END_ADDR - 4096, 256);
-            if (!verify_frimware_signature(signature, hash, publickey)) {
-                printf("signature check error\n");
-            } else {
-                isOK = true;
-                printf("signature check ok\n");
-            }
-            vPortFree(signature);
+
+        PrintArray("hash", hash, 32);
+        if (checkSum && originalHash != NULL) {
+            PrintArray("originalHash", originalHash, 32);
+            return (memcmp(hash, originalHash, 32) != 0);
         }
     } while (0);
+
     if (checkSum) {
         LcdFullScreen(0);
+
+        // if (!VerifyFirmwareSignature(hash)) {
+        //     HandleFirmwareVerificationFailed();
+        //     return false;
+        // }
     }
 
-    if (checkSum && !isOK) {
-        ReducedGlInit();
-        SimpleDrawButton(xStart, yStart, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
-        uint8_t cnt = 0;
-        char buff[32];
-        int i = 9;
-        while (1) {
-            sprintf(buff, "Wipe Device %d", i--);
-            if (i == 0) {
-                break;
-            }
-            SimpleDrawButton(180, 423, 130, 60, _COLOR_MAKE(0, 0, 0), buff);
-            UserDelay(1000);
-        }
-        WipeDeviceCallbackFunc();
-    }
-
-    memset(buffer, 0, SECTOR_SIZE);
-    return SUCCESS_CODE;
+    return true;
 }
 #endif
 
