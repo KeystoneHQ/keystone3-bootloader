@@ -393,23 +393,23 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
             break;
         }
 
-// #if (SIGNATURE_ENABLE == 1)
-//         printf("signature=%s\r\n", info->signature);
-//         if (strlen(info->signature) != 128) {
-//             printf("error signature=%s\r\n", info->signature);
-//             bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
-//             break;
-//         }
-//         // TODO: find this public key from firmware section.
-//         uint8_t publickey[65] = {0};
-//         GetUpdatePubKey(publickey);
-//         PrintArray("pubKey", publickey, 65);
-//         if (verify_frimware_signature(info->signature, content_hash, publickey) != true) {
-//             printf("signature check error\n");
-//             bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
-//             break;
-//         }
-// #endif
+#if (SIGNATURE_ENABLE == 1)
+        printf("signature=%s\r\n", info->signature);
+        if (strlen(info->signature) != 128) {
+            printf("error signature=%s\r\n", info->signature);
+            bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
+            break;
+        }
+        // TODO: find this public key from firmware section.
+        uint8_t publickey[65] = {0};
+        GetUpdatePubKey(publickey);
+        PrintArray("pubKey", publickey, 65);
+        if (verify_frimware_signature(info->signature, content_hash, publickey) != true) {
+            printf("signature check error\n");
+            bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
+            break;
+        }
+#endif
     } while (0);
     f_close(&fp);
 
@@ -757,10 +757,12 @@ bool CalculateCheckSum(bool checkSum, const uint8_t *originalHash)
     if (checkSum) {
         LcdFullScreen(0);
 
-        // if (!VerifyFirmwareSignature(hash)) {
-        //     HandleFirmwareVerificationFailed();
-        //     return false;
-        // }
+#if SIGNATURE_ENABLE
+        if (!VerifyFirmwareSignature(hash)) {
+            HandleFirmwareVerificationFailed();
+            return false;
+        }
+#endif
     }
 
     return true;
