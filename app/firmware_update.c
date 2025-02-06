@@ -74,10 +74,11 @@ static uint8_t g_fileUnit[FILE_UNIT_SIZE + 16];
 static uint8_t g_dataUnit[DATA_UNIT_SIZE];
 
 static uint32_t BytesToUint32BE(uint8_t *bytes);
+static bool IsHexChar(char c);
 static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath);
 static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pHeadSize);
 static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
-static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
+static int32_t UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
 static int32_t GetIntValue(const cJSON *obj, const char *key);
 static void GetStringValue(const cJSON *obj, const char *key, char *value, uint32_t maxLen);
 #if (SIGNATURE_ENABLE == 1)
@@ -146,6 +147,7 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
 {
     char buff[32];
     uint32_t c = 0x666666;
+    LcdFullScreen(0);
     uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
     switch (errCode) {
     case ERR_UPDATE_CHECK_CRC_FAILED:
@@ -175,8 +177,8 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
         c = 0xF55831;
         color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
         DrawStringOnLcd(160, 323, "Lower Version", color, &openSans_24);
-        DrawStringOnLcd(36, 375, "Make sure the version is higher than 2.0", color, &openSans_24);
-        DrawStringOnLcd(90, 405, "Please download the firmware version 2.0 or higher", 0xFFFF, &openSans_20);
+        DrawStringOnLcd(45, 375, "Make sure the version is higher than 2.0", color, &openSans_20);
+        DrawStringOnLcd(90, 405, "Please download the firmware\n         version 2.0 or higher", 0xFFFF, &openSans_20);
         break;
     default:
         break;
@@ -223,15 +225,18 @@ void FirmwareUpdate(char *filePath)
     OpenPower(POWER_TYPE_VCC33);
     LcdCheck();
     LcdInit();
-    DrawStringOnLcd(190, 412, "Installing", 0xFFFF, &openSans_24);
     c = 0x666666;
     color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
     DrawStringOnLcd(56, 460, "Please Keep the Device ON and Maintain", color, &openSans_20);
     DrawStringOnLcd(175, 490, "Power Supply", color, &openSans_20);
     UserDelay(100);
     SetLcdBright(70);
-    UpdateFromOtaFile(&otaFileInfo, filePath, headSize);
+    ret = UpdateFromOtaFile(&otaFileInfo, filePath, headSize);
     f_unlink(filePath);
+    if (ret != SUCCESS_CODE) {
+        FirmwareUpdateErrorHandel(ret);
+        return;
+    }
     NVIC_SystemReset();
 }
 
@@ -275,6 +280,13 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
             break;
         }
         memcpy(info->mark, headJsonStr, 8);
+        if (strcmp(info->mark, FILE_MARK_MCU_FIRMWARE_2_0) != 0) {
+            printf("file info mark err\r\n");
+            if (strcmp(info->mark, FILE_MARK_MCU_FIRMWARE) == 0) {
+                return 0;
+            }
+            return 0;
+        }
         info->fileSize = BytesToUint32BE(headJsonStr + FILE_SIZE_OFFSET);
         info->originalFileSize = BytesToUint32BE(headJsonStr + ORIGINAL_FILE_SIZE_OFFSET);
         memcpy(info->hash, headJsonStr + HASH_OFFSET, 32);
@@ -293,30 +305,6 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
         printf("info->signature=%s\r\n", info->signature);
         memcpy(info->originalSignature, headJsonStr + ORIGINAL_SIGNATURE_OFFSET, SIGNATURE_LEN);
         printf("info->originalSignature=%s\r\n", info->originalSignature);
-        // RecoveryMode();
-#if 0
-        headJsonStr[headSize] = '\0';
-        printf("headJsonStr=%s\r\n", headJsonStr);
-        jsonRoot = cJSON_Parse(headJsonStr);
-        if (jsonRoot == NULL) {
-            printf("parse error:%s\n", cJSON_GetErrorPtr());
-            break;
-        }
-        GetStringValue(jsonRoot, "mark", info->mark, OTA_FILE_INFO_MARK_MAX_LEN);
-#if (SIGNATURE_ENABLE == 1)
-        GetSignatureValue(jsonRoot, info->signature, SIGNATURE_LEN);
-#endif
-        info->fileSize = GetIntValue(jsonRoot, "fileSize");
-        info->originalFileSize = GetIntValue(jsonRoot, "originalFileSize");
-        info->crc32 = GetIntValue(jsonRoot, "crc32");
-        info->originalCrc32 = GetIntValue(jsonRoot, "originalCrc32");
-        info->encode = GetIntValue(jsonRoot, "encode");
-        info->encodeUnit = GetIntValue(jsonRoot, "encodeUnit");
-        info->encrypt = GetIntValue(jsonRoot, "encrypt");
-        info->originalBriefSize = GetIntValue(jsonRoot, "originalBriefSize");
-        info->originalBriefCrc32 = GetIntValue(jsonRoot, "originalBriefCrc32");
-        cJSON_Delete(jsonRoot);
-#endif
     } while (0);
     if (headJsonStr != NULL) {
         vPortFree(headJsonStr);
@@ -329,11 +317,14 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
 {
     FIL fp;
     int32_t ret;
-    uint32_t fileSize, crcCalc, readSize, i, headSize;
+    uint32_t fileSize, crcCalc, readSize, i, headSize, j;
     int32_t bRet = SUCCESS_CODE;
     sha256_context ctx;
 
     headSize = GetOtaFileInfo(info, filePath);
+    if (headSize == 0) {
+        return ERR_UPDATE_CHECK_FILE_MARK_FAILED;
+    }
     *pHeadSize = headSize;
     ret = f_open(&fp, filePath, FA_OPEN_EXISTING | FA_READ);
     if (ret) {
@@ -360,14 +351,6 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
         if (fileSize != info->fileSize + headSize) {
             printf("file size err,fileSize=%d, info->fileSize=%d\r\n", fileSize, info->fileSize);
             bRet = ERR_UPDATE_CHECK_CRC_FAILED;
-            break;
-        }
-        if (strcmp(info->mark, FILE_MARK_MCU_FIRMWARE_2_0) != 0) {
-            printf("file info mark err\r\n");
-            bRet = ERR_UPDATE_CHECK_CRC_FAILED;
-            if (strcmp(info->mark, FILE_MARK_MCU_FIRMWARE) == 0) {
-                bRet = ERR_UPDATE_CHECK_FILE_MARK_FAILED;
-            }
             break;
         }
         printf("start to check file crc32\r\n");
@@ -397,6 +380,16 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
         printf("signature=%s\r\n", info->signature);
         if (strlen(info->signature) != 128) {
             printf("error signature=%s\r\n", info->signature);
+            bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
+            break;
+        }
+        // signature number check is not 0-f
+        for (j = 0; j < 128; j++) {
+            if (!IsHexChar(info->signature[j])) {
+                break;
+            }
+        }
+        if (j != 128) {
             bRet = ERR_UPDATE_CHECK_SIGNATURE_FAILED;
             break;
         }
@@ -471,8 +464,7 @@ static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32
     }
 }
 
-
-static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize)
+static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize, bool write)
 {
     FIL fp;
     int32_t ret;
@@ -483,12 +475,18 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
     char percentStr[16];
     uint8_t content_hash[32];
 
+    if (write) {
+        DrawStringOnLcd(190, 412, "Installing", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(215, 620, "               ", 0xFFFF, &openSans_24);
+    } else {
+        DrawStringOnLcd(190, 412, "Checking", 0xFFFF, &openSans_24);
+    }
     DrawStringOnLcd(215, 620, "0%", 0xFFFF, &openSans_24);
     DrawProgressBarOnLcd(80, 594, 320, 9, 0, 0x21F4);
     ret = f_open(&fp, filePath, FA_OPEN_EXISTING | FA_READ);
     if (ret) {
         FatfsError((FRESULT)ret);
-        return;
+        return ERR_UPDATE_CHECK_FILE_EXIST;
     }
     sha256_init(&ctx);
 
@@ -500,22 +498,23 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
         if (ret) {
             FatfsError((FRESULT)ret);
             f_close(&fp);
-            return;
+            return ERR_UPDATE_CHECK_FILE_EXIST;
         }
         i += readSize;
         cmpsdSize = qlz_size_compressed((char*)g_fileUnit);
         decmpsdSize = qlz_size_decompressed((char*)g_fileUnit);
-        //printf("cmpsdSize=%d,decmpsdSize=%d\r\n", cmpsdSize, decmpsdSize);
         ret = f_read(&fp, g_fileUnit + 16, cmpsdSize - 16, (UINT *)&readSize);
         if (ret) {
             FatfsError((FRESULT)ret);
             f_close(&fp);
-            return;
+            return ERR_UPDATE_CHECK_FILE_EXIST;
         }
         qlz_decompress((char*)g_fileUnit, g_dataUnit, &qlzState);
         sha256_hash(&ctx, g_dataUnit, decmpsdSize);
         for (offset = 0; offset < decmpsdSize; offset += 4096) {
-            QspiFlashEraseAndWrite(writeAddr, g_dataUnit + offset, 4096);
+            if (write) {
+                QspiFlashEraseAndWrite(writeAddr, g_dataUnit + offset, 4096);
+            }
             writeAddr += 4096;
         }
         i += readSize;
@@ -532,25 +531,43 @@ static void UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, u
     sha256_done(&ctx, content_hash);
     PrintArray("content_hash", content_hash, 32);
     PrintArray("originalHash", info->originalHash, 32);
-    if (memcmp(content_hash, info->originalHash, 32) == 0) {
-        printf("update success\r\n");
+    uint8_t publickey[65] = {0};
+    GetUpdatePubKey(publickey);
+    if (memcmp(content_hash, info->originalHash, 32) == 0 &&
+            verify_frimware_signature(info->originalSignature, content_hash, publickey)) {
+        printf("check ok\r\n");
         char *signature = pvPortMalloc(4096);
         memcpy(signature, info->originalSignature, sizeof(info->originalSignature));
-        QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+        if (write) {
+            QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+        }
         printf("signature:%s\r\n", signature);
         memset(signature, 0, 4096);
         vPortFree(signature);
+        return SUCCESS_CODE;
     } else {
         printf("update failed\r\n");
         char *signature = pvPortMalloc(4096);
         for (int i = 0; i < 256; i++) {
             signature[i] = i;
         }
-        QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+        if (write) {
+            QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+        }
         vPortFree(signature);
+        return ERR_UPDATE_CHECK_CRC_FAILED;
     }
+    return SUCCESS_CODE;
 }
 
+static int32_t UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize)
+{
+    int32_t ret = ReadOtaFileAndCheck(info, filePath, headSize, false);
+    if (ret != SUCCESS_CODE) {
+        return ret;
+    }
+    return ReadOtaFileAndCheck(info, filePath, headSize, true);
+}
 
 /**
  * @brief       Get integer value from cJSON object.
@@ -698,6 +715,9 @@ static bool CalculateFirmwareHash(uint8_t *hash, bool showProgress)
 
     sha256_context ctx;
     sha256_init(&ctx);
+    if (showProgress) {
+        DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
+    }
 
     for (int i = 0; i <= lastSector; i++) {
         memset(buffer, 0, SECTOR_SIZE);
@@ -754,7 +774,7 @@ bool CalculateCheckSum(bool checkSum, const uint8_t *originalHash)
         }
     } while (0);
 
-    if (checkSum) {
+    if (!checkSum) {
         LcdFullScreen(0);
 
 #if SIGNATURE_ENABLE
@@ -772,4 +792,9 @@ bool CalculateCheckSum(bool checkSum, const uint8_t *originalHash)
 static uint32_t BytesToUint32BE(uint8_t *bytes)
 {
     return (uint32_t)bytes[0] << 24 | (uint32_t)bytes[1] << 16 | (uint32_t)bytes[2] << 8 | (uint32_t)bytes[3];
+}
+
+static bool IsHexChar(char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
