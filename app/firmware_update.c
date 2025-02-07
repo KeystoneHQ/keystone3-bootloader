@@ -206,6 +206,7 @@ void FirmwareUpdate(char *filePath)
             return;
         }
         LcdOpen();
+        printf("file delete\n");
         f_unlink(filePath);
         FirmwareUpdateErrorHandel(ret);
         return;
@@ -533,18 +534,22 @@ static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePa
     PrintArray("originalHash", info->originalHash, 32);
     uint8_t publickey[65] = {0};
     GetUpdatePubKey(publickey);
-    if (memcmp(content_hash, info->originalHash, 32) == 0 &&
-            verify_frimware_signature(info->originalSignature, content_hash, publickey)) {
-        printf("check ok\r\n");
-        char *signature = pvPortMalloc(4096);
-        memcpy(signature, info->originalSignature, sizeof(info->originalSignature));
-        if (write) {
-            QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+    if (memcmp(content_hash, info->originalHash, 32) == 0) {
+        if (verify_frimware_signature(info->originalSignature, content_hash, publickey)) {
+            printf("check signature ok\r\n");
+            char *signature = pvPortMalloc(4096);
+            memcpy(signature, info->originalSignature, sizeof(info->originalSignature));
+            if (write) {
+                QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+            }
+            printf("signature:%s\r\n", signature);
+            memset(signature, 0, 4096);
+            vPortFree(signature);
+            return SUCCESS_CODE;
+        } else {
+            printf("check signature failed\r\n");
+            return ERR_UPDATE_CHECK_SIGNATURE_FAILED;
         }
-        printf("signature:%s\r\n", signature);
-        memset(signature, 0, 4096);
-        vPortFree(signature);
-        return SUCCESS_CODE;
     } else {
         printf("update failed\r\n");
         char *signature = pvPortMalloc(4096);
