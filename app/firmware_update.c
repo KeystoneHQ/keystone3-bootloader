@@ -23,6 +23,8 @@
 #include "drv_gd25qxx.h"
 #include "hal_touch.h"
 #include "recovery_mode.h"
+#include "ctaes.h"
+#include "reduced_gl.h"
 
 #if (SIGNATURE_ENABLE == 1)
 #include "librust_c.h"
@@ -702,9 +704,36 @@ static uint32_t BinarySearchLastNonFFSector(void)
     return -1;
 }
 
-void NotToDuFunc(void)
+void AesDecryptBuffer(uint8_t *plain, uint32_t sz, uint8_t *cipher)
 {
+    AES128_CBC_ctx ctx;
+    uint8_t key128[16] = {0};
+    uint8_t iv[16] = {0};
 
+    OTP_PowerOn();
+    memcpy(key128, (uint32_t *)(0x40009128), 16);
+    memcpy(iv, (uint32_t *)(0x40009138), 16);
+    AES128_CBC_init(&ctx, key128, iv);
+    AES128_CBC_decrypt(&ctx, sz / 16, plain, cipher);
+}
+
+bool GetBootSecureCheckFlag(void)
+{
+#define BOOT_SECURE_CHECK_FLAG                  0x00F6D800
+    static const uint8_t integrityFlag[16] = {
+        0x01, 0x09, 0x00, 0x03,
+        0x01, 0x09, 0x00, 0x03,
+        0x01, 0x09, 0x00, 0x03,
+        0x01, 0x09, 0x00, 0x03,
+    };
+    uint8_t cipher[16] = {0};
+    uint8_t plain[16] = {0};
+    Gd25FlashReadBuffer(BOOT_SECURE_CHECK_FLAG, cipher, sizeof(cipher));
+    if (CheckAllFF(cipher, sizeof(cipher))) {
+        return true;
+    }
+    AesDecryptBuffer(plain, sizeof(plain), cipher);
+    return (memcmp(plain, integrityFlag, sizeof(integrityFlag)) == 0);
 }
 
 static bool CalculateFirmwareHash(uint8_t *hash, bool showProgress)
@@ -742,19 +771,35 @@ static bool CalculateFirmwareHash(uint8_t *hash, bool showProgress)
     return true;
 }
 
+void EnterSystemCallbackFunc(void)
+{
+    typedef int (*jumpApp)(void);
+    volatile int *ptr = (int *)APP_ADDR;
+    jumpApp app;
+
+    if (*ptr != 0xffffffff) {
+        app = (jumpApp)(*(__IO uint32_t*)(APP_ADDR + 4));
+        __disable_irq();
+        __set_MSP(*(__IO uint32_t*) APP_ADDR);
+
+        app();
+    }
+}
+
 static void HandleFirmwareVerificationFailed(void)
 {
     ReducedGlInit();
     SimpleDrawButton(100, 500, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
 
-    for (int i = 9; i > 0; i--) {
-        char buff[32];
-        snprintf(buff, sizeof(buff), "Wipe Device %d", i);
-        SimpleDrawButton(180, 423, 130, 60, _COLOR_MAKE(0, 0, 0), buff);
-        UserDelay(1000);
+    CreateRadiusButton(36, 611, 408, 66, _COLOR_MAKE(0xF5, 0x58, 0x31),
+                       _COLOR_MAKE(0xF5, 0x58, 0x31), "Wipe Device", WipeDeviceCallbackFunc);
+    CreateRadiusButton(36, 611, 408, 66, _COLOR_MAKE(0xF5, 0x58, 0x31),
+                       _COLOR_MAKE(0xF5, 0x58, 0x31), "Enter System", EnterSystemCallbackFunc);
+    while (1) {
+        ReducedGlHandler();
     }
-    WipeDeviceCallbackFunc();
 }
+
 
 bool CalculateCheckSum(bool checkSum, const uint8_t *originalHash)
 {
@@ -763,6 +808,7 @@ bool CalculateCheckSum(bool checkSum, const uint8_t *originalHash)
     }
 
     uint8_t hash[32] = {0};
+
     do {
         if (!checkSum) {
             LcdOpen();

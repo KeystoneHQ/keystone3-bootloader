@@ -117,9 +117,10 @@ static void RecoveryModeMainMenu(void)
 #ifndef __GNUC__
     CreateLabel(140, 200, _COLOR_MAKE(255, 0, 0), "*Developer Mode*");
 #endif
-    CreateButton(100, 300, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Reboot", RebootCallbackFunc);
+    // CreateButton(100, 300, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Reboot", RebootCallbackFunc);
     CreateButton(100, 400, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Power Off", PowerOffMenu);
     CreateButton(100, 500, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Wipe Device", WipeDeviceMenu);
+    CreateRadiusButton(100, 300, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Reboot", RebootCallbackFunc);
     if (CheckApp() == false) {
         CreateLabel(200, 650, 0xFFFF, "NO APP");
     } else {

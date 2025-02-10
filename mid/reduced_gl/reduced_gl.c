@@ -27,6 +27,8 @@ static void DrawLabel(WidgetLabel_t *pLabel, uint16_t x, uint16_t y);
 static void DrawText(uint16_t x, uint16_t y, const char *text, uint16_t color, uint16_t bgColor, const lv_font_t *font);
 static uint16_t GetTextWidth(const char *text, const lv_font_t *font);
 static void DrawLetter(uint16_t x, uint16_t y, uint16_t width, uint16_t height, lv_font_glyph_dsc_t *dsc, const uint8_t *map_p, uint16_t color, uint16_t bgColor);
+static void DrawCircle(uint16_t x, uint16_t y, uint16_t r, uint16_t color);
+static void DrawRadiusButton(WidgetButton_t *pButton, uint16_t x, uint16_t y);
 
 static TouchStatus_t g_touchStatus;
 
@@ -97,6 +99,8 @@ void DeleteAllWidgets(void)
             vPortFree(((WidgetButton_t *)(node->widget))->text);
         } else if (node->type == WIDGET_TYPE_LABEL) {
             vPortFree(((WidgetLabel_t *)(node->widget))->text);
+        } else if (node->type == WIDGET_TYPE_RADIUS_BUTTON) {
+            vPortFree(((WidgetButton_t *)(node->widget))->text);
         }
         vPortFree(node->widget);
         vPortFree(node);
@@ -120,6 +124,21 @@ WidgetButton_t *CreateButton(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uin
     pWidgetButton->text = pvPortMalloc(strlen(text) + 1);
     strcpy(pWidgetButton->text, text);
     AddWidget(x, y, WIDGET_TYPE_BUTTON, pWidgetButton);
+    return pWidgetButton;
+}
+
+WidgetButton_t *CreateRadiusButton(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color, uint16_t pressedColor, const char *text, DispCallbackFunc_t func)
+{
+    WidgetButton_t *pWidgetButton = pvPortMalloc(sizeof(WidgetButton_t));
+    memset(pWidgetButton, 0, sizeof(WidgetButton_t));
+    pWidgetButton->w = w;
+    pWidgetButton->h = h;
+    pWidgetButton->color = color;
+    pWidgetButton->pressedColor = pressedColor;
+    pWidgetButton->callbackFunc = func;
+    pWidgetButton->text = pvPortMalloc(strlen(text) + 1);
+    strcpy(pWidgetButton->text, text);
+    AddWidget(x, y, WIDGET_TYPE_RADIUS_BUTTON, pWidgetButton);
     return pWidgetButton;
 }
 
@@ -181,7 +200,7 @@ static DispCallbackFunc_t TouchHandle(uint16_t x, uint16_t y, bool pressed)
         pressedX = x;
         pressedY = y;
         while (node != NULL) {
-            if (node->type == WIDGET_TYPE_BUTTON) {
+            if (node->type == WIDGET_TYPE_BUTTON || node->type == WIDGET_TYPE_RADIUS_BUTTON) {
                 pButton = node->widget;
                 if (x >= node->x && x <= (node->x + pButton->w) && y >= node->y && y <= (node->y + pButton->h)) {
                     pButton->pressed = true;
@@ -193,7 +212,7 @@ static DispCallbackFunc_t TouchHandle(uint16_t x, uint16_t y, bool pressed)
     } else if (lastPressed == true && pressed == false) {
         //release
         while (node != NULL) {
-            if (node->type == WIDGET_TYPE_BUTTON) {
+            if (node->type == WIDGET_TYPE_BUTTON || node->type == WIDGET_TYPE_RADIUS_BUTTON) {
                 pButton = node->widget;
                 if (lastX >= node->x && lastX <= (node->x + pButton->w) && lastY >= node->y && lastY <= (node->y + pButton->h)) {
                     if (pressedX >= node->x && pressedX <= (node->x + pButton->w) && pressedY >= node->y && pressedY <= (node->y + pButton->h)) {
@@ -235,6 +254,8 @@ static void DrawWidgets(void)
                 DrawButton((WidgetButton_t *)node->widget, node->x, node->y);
             } else if (node->type == WIDGET_TYPE_LABEL) {
                 DrawLabel((WidgetLabel_t *)node->widget, node->x, node->y);
+            } else if (node->type == WIDGET_TYPE_RADIUS_BUTTON) {
+                DrawRadiusButton((WidgetButton_t *)node->widget, node->x, node->y);
             }
         }
         node = node->next;
@@ -252,6 +273,28 @@ void SimpleDrawButton(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t b
     DrawText(textX, textY, text, 0xFFFF, buttonColor, &openSans_20);
 }
 
+static void DrawRadiusButton(WidgetButton_t *pButton, uint16_t x, uint16_t y)
+{
+    uint16_t color = 0xFFFF;
+    uint16_t textX, textY, textPixelLen, radius;
+
+    textPixelLen = GetTextWidth(pButton->text, &openSans_20);
+    radius = pButton->h / 2;
+    textX = pButton->w > textPixelLen ? x + (pButton->w - textPixelLen) / 2 : x;
+    textY = pButton->h > lv_font_get_line_height(&openSans_20) ? y + (pButton->h - lv_font_get_line_height(&openSans_20)) / 2 : y;
+    if (pButton->pressed) {
+        DrawCircle(x - radius, y + radius, radius, pButton->pressedColor);
+        DrawCircle(x + pButton->w - radius, y + radius, radius, pButton->pressedColor);
+        DrawRect(x, y, pButton->w, pButton->h, pButton->pressedColor);
+
+        DrawText(textX, textY, pButton->text, color, pButton->pressedColor, &openSans_20);
+    } else {
+        DrawCircle(x - radius, y + radius, radius, pButton->color);
+        DrawCircle(x + pButton->w - radius, y + radius, radius, pButton->color);
+        DrawRect(x, y, pButton->w, pButton->h, pButton->color);
+        DrawText(textX, textY, pButton->text, color, pButton->color, &openSans_20);
+    }
+}
 
 static void DrawButton(WidgetButton_t *pButton, uint16_t x, uint16_t y)
 {
@@ -276,6 +319,39 @@ static void DrawLabel(WidgetLabel_t *pLabel, uint16_t x, uint16_t y)
     DrawText(x, y, pLabel->text, pLabel->color, 0, &openSans_24);
 }
 
+static void DrawCircle(uint16_t x, uint16_t y, uint16_t r, uint16_t color)
+{
+    int16_t x_pos, y_pos;
+    uint16_t *colors;
+    uint16_t width = r * 2;
+    uint16_t height = r * 2;
+    int16_t cx = r;
+    int16_t cy = r;
+    int16_t rsq = r * r;
+
+    colors = pvPortMalloc(width * height * sizeof(uint16_t));
+    if (colors == NULL) return;
+
+    for (y_pos = 0; y_pos < height; y_pos++) {
+        for (x_pos = 0; x_pos < width; x_pos++) {
+            int16_t dx = x_pos - cx;
+            int16_t dy = y_pos - cy;
+            int16_t dsq = dx * dx + dy * dy;
+
+            if (dsq <= rsq) {
+                colors[y_pos * width + x_pos] = color;
+            } else {
+                colors[y_pos * width + x_pos] = 0;  // background color
+            }
+        }
+    }
+
+    WaitUntilDmaNotBusy();
+
+    LcdDraw(x - r, y - r, x + r - 1, y + r - 1, colors);
+
+    vPortFree(colors);
+}
 
 static void DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
 {
