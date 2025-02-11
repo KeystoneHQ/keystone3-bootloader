@@ -282,18 +282,11 @@ static void DrawRadiusButton(WidgetButton_t *pButton, uint16_t x, uint16_t y)
     radius = pButton->h / 2;
     textX = pButton->w > textPixelLen ? x + (pButton->w - textPixelLen) / 2 : x;
     textY = pButton->h > lv_font_get_line_height(&openSans_20) ? y + (pButton->h - lv_font_get_line_height(&openSans_20)) / 2 : y;
-    if (pButton->pressed) {
-        DrawCircle(x - radius, y + radius, radius, pButton->pressedColor);
-        DrawCircle(x + pButton->w - radius, y + radius, radius, pButton->pressedColor);
-        DrawRect(x, y, pButton->w, pButton->h, pButton->pressedColor);
-
-        DrawText(textX, textY, pButton->text, color, pButton->pressedColor, &openSans_20);
-    } else {
-        DrawCircle(x - radius, y + radius, radius, pButton->color);
-        DrawCircle(x + pButton->w - radius, y + radius, radius, pButton->color);
-        DrawRect(x, y, pButton->w, pButton->h, pButton->color);
-        DrawText(textX, textY, pButton->text, color, pButton->color, &openSans_20);
-    }
+    color = pButton->pressed ? pButton->pressedColor : pButton->color;
+    DrawCircle(x, y + radius, radius, color);
+    DrawCircle(x + pButton->w, y + radius, radius, color);
+    DrawRect(x, y, pButton->w, pButton->h, color);
+    DrawText(textX, textY, pButton->text, 0xFFFF, color, &openSans_20);
 }
 
 static void DrawButton(WidgetButton_t *pButton, uint16_t x, uint16_t y)

@@ -23,6 +23,7 @@ LV_FONT_DECLARE(openSans_20);
 LV_FONT_DECLARE(openSans_24);
 
 #define BOOTLOADER_VERSION              "v0.2.0"
+const char g_softwareVersionString[] __attribute__((section(".fixSection"))) = "Boot v0.2.0";
 
 #define BUTTON_PORT                     GPIOE
 #define BUTTON_PIN                      GPIO_Pin_14
@@ -117,10 +118,9 @@ static void RecoveryModeMainMenu(void)
 #ifndef __GNUC__
     CreateLabel(140, 200, _COLOR_MAKE(255, 0, 0), "*Developer Mode*");
 #endif
-    // CreateButton(100, 300, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Reboot", RebootCallbackFunc);
+    CreateButton(100, 300, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Reboot", RebootCallbackFunc);
     CreateButton(100, 400, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Power Off", PowerOffMenu);
     CreateButton(100, 500, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Wipe Device", WipeDeviceMenu);
-    CreateRadiusButton(100, 300, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Reboot", RebootCallbackFunc);
     if (CheckApp() == false) {
         CreateLabel(200, 650, 0xFFFF, "NO APP");
     } else {
@@ -168,7 +168,6 @@ static void PowerOffCallbackFunc(void)
     CreateLabel(40, 650, 0xFFFF, "Turning the power off now...");
     printf("PowerOffCallbackFunc\n");
 }
-
 
 void WipeDeviceCallbackFunc(void)
 {

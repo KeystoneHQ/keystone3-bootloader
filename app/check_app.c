@@ -33,7 +33,6 @@ bool CheckApp(void)
 bool CheckAppExist(void)
 {
     uint8_t read[4096];
-    uint32_t major, minor, build;
     memcpy(read, (void *)APP_ADDR, 4096);
     return !CheckAllFF(read, 4096);
 }

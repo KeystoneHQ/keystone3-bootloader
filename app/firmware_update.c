@@ -8,7 +8,6 @@
 #include "quicklz.h"
 #include "log_print.h"
 #include "drv_qspi_flash.h"
-#include "cJSON.h"
 #include "hal_lcd.h"
 #include "user_delay.h"
 #include "draw_on_lcd.h"
@@ -25,6 +24,7 @@
 #include "recovery_mode.h"
 #include "ctaes.h"
 #include "reduced_gl.h"
+#include "imgWarn.h"
 
 #if (SIGNATURE_ENABLE == 1)
 #include "librust_c.h"
@@ -75,16 +75,13 @@ typedef enum {
 static uint8_t g_fileUnit[FILE_UNIT_SIZE + 16];
 static uint8_t g_dataUnit[DATA_UNIT_SIZE];
 
-static uint32_t BytesToUint32BE(uint8_t *bytes);
+static uint32_t BytesToUint32BE(char *bytes);
 static bool IsHexChar(char c);
 static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath);
 static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pHeadSize);
 static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
 static int32_t UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
-static int32_t GetIntValue(const cJSON *obj, const char *key);
-static void GetStringValue(const cJSON *obj, const char *key, char *value, uint32_t maxLen);
 #if (SIGNATURE_ENABLE == 1)
-static void GetSignatureValue(const cJSON *obj, char *output, uint32_t maxLength);
 static void GetUpdatePubKey(uint8_t *pubKey);
 const uint8_t g_defaultPubKey[] = {
     0xD9, 0xA5, 0xDB, 0x68, 0x66, 0x36, 0x4B, 0x7F, 0x55, 0xCF, 0x6F, 0x3C, 0x19, 0x9A, 0x96, 0x26,
@@ -240,6 +237,7 @@ void FirmwareUpdate(char *filePath)
         FirmwareUpdateErrorHandel(ret);
         return;
     }
+    CalculateCheckSum(false, NULL);
     NVIC_SystemReset();
 }
 
@@ -254,7 +252,6 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
     int32_t ret;
     uint32_t headSize = 0, readSize;
     char *headJsonStr = NULL;
-    cJSON *jsonRoot;
 
     ret = f_open(&fp, filePath, FA_OPEN_EXISTING | FA_READ);
     do {
@@ -320,7 +317,7 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
 {
     FIL fp;
     int32_t ret;
-    uint32_t fileSize, crcCalc, readSize, i, headSize, j;
+    uint32_t fileSize, readSize, i, headSize, j;
     int32_t bRet = SUCCESS_CODE;
     sha256_context ctx;
 
@@ -582,58 +579,8 @@ static int32_t UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath
  * @param[in]   key : key name.
  * @retval      integer value to get.
  */
-static int32_t GetIntValue(const cJSON *obj, const char *key)
-{
-    cJSON *intJson = cJSON_GetObjectItem((cJSON *)obj, key);
-    if (intJson != NULL) {
-        return (uint32_t)intJson->valuedouble;
-    }
-    printf("key:%s does not exist\r\n", key);
-    return 0;
-}
-
-
-/**
- * @brief       Get string value from cJSON object.
- * @param[in]   obj : cJSON object.
- * @param[in]   key : key name.
- * @param[out]  value : return string value, if the acquisition fails, the string will be cleared.
- * @retval
- */
-static void GetStringValue(const cJSON *obj, const char *key, char *value, uint32_t maxLen)
-{
-    cJSON *json;
-    uint32_t len;
-    char *strTemp;
-
-    json = cJSON_GetObjectItem((cJSON *)obj, key);
-    if (json != NULL) {
-        strTemp = json->valuestring;
-        len = strlen(strTemp);
-        if (len < maxLen) {
-            strcpy(value, strTemp);
-        } else {
-            strcpy(value, "");
-        }
-    } else {
-        printf("key:%s does not exist\r\n", key);
-        strcpy(value, "");
-    }
-}
 
 #if (SIGNATURE_ENABLE == 1)
-static void GetSignatureValue(const cJSON *obj, char *output, uint32_t maxLength)
-{
-    cJSON *signatureValue = cJSON_GetObjectItem((cJSON *)obj, "signature");
-    if (signatureValue->type == cJSON_String) {
-        char *strTemp = signatureValue->valuestring;
-        strncpy(output, strTemp, maxLength);
-        return;
-    }
-    memset(output, 0, maxLength);
-    printf("signature does not exist\r\n");
-}
-
 static void GetUpdatePubKey(uint8_t *pubKey)
 {
     uint8_t data[UPDATE_PUB_KEY_LEN];
@@ -730,9 +677,10 @@ bool GetBootSecureCheckFlag(void)
     uint8_t plain[16] = {0};
     Gd25FlashReadBuffer(BOOT_SECURE_CHECK_FLAG, cipher, sizeof(cipher));
     if (CheckAllFF(cipher, sizeof(cipher))) {
-        return true;
+        return false;
     }
     AesDecryptBuffer(plain, sizeof(plain), cipher);
+    PrintArray("plain", plain, sizeof(plain));
     return (memcmp(plain, integrityFlag, sizeof(integrityFlag)) == 0);
 }
 
@@ -750,7 +698,8 @@ static bool CalculateFirmwareHash(uint8_t *hash, bool showProgress)
     sha256_context ctx;
     sha256_init(&ctx);
     if (showProgress) {
-        DrawStringOnLcd(155, 412, "Check firmware", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(155, 407, "Check firmware", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(100, 457, "Verifying firmware, please wait", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
     }
 
     for (int i = 0; i <= lastSector; i++) {
@@ -789,12 +738,20 @@ void EnterSystemCallbackFunc(void)
 static void HandleFirmwareVerificationFailed(void)
 {
     ReducedGlInit();
-    SimpleDrawButton(100, 500, 280, 60, _COLOR_MAKE(0xFF, 0, 0), "firmware not secure");
+    DrawStringOnLcd(135, 298, "Verification Failure", 0xFFFF, &openSans_24);
+    // DrawImageOnLcd(204, 194, g_imgWarn, 1, 1);
+    DrawStringOnLcd(50, 350, "The firmware is incomplete, corrupted, or", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(55, 380, "possibly tampered with. Please wipe the", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(50, 410, "device and reinstall the firmware from the ", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(165, 440, "official website.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(50, 470, "Alternatively, you can access the systems", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(55, 500, "now to transfer your assets to a secure ", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(205, 530, "address.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
 
-    CreateRadiusButton(36, 611, 408, 66, _COLOR_MAKE(0xF5, 0x58, 0x31),
+    CreateRadiusButton(36 + 32, 611, 408 - 64, 64, _COLOR_MAKE(0xF5, 0x58, 0x31),
                        _COLOR_MAKE(0xF5, 0x58, 0x31), "Wipe Device", WipeDeviceCallbackFunc);
-    CreateRadiusButton(36, 611, 408, 66, _COLOR_MAKE(0xF5, 0x58, 0x31),
-                       _COLOR_MAKE(0xF5, 0x58, 0x31), "Enter System", EnterSystemCallbackFunc);
+    CreateRadiusButton(36 + 32, 698, 408 - 64, 64, _COLOR_MAKE(0x33, 0x33, 0x33),
+                       _COLOR_MAKE(0x33, 0x33, 0x33), "Enter System", EnterSystemCallbackFunc);
     while (1) {
         ReducedGlHandler();
     }
@@ -840,7 +797,7 @@ bool CalculateCheckSum(bool checkSum, const uint8_t *originalHash)
 }
 #endif
 
-static uint32_t BytesToUint32BE(uint8_t *bytes)
+static uint32_t BytesToUint32BE(char *bytes)
 {
     return (uint32_t)bytes[0] << 24 | (uint32_t)bytes[1] << 16 | (uint32_t)bytes[2] << 8 | (uint32_t)bytes[3];
 }

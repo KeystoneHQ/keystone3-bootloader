@@ -6,8 +6,7 @@
 #include "drv_power.h"
 #include "drv_parallel8080.h"
 #include "hardware_version.h"
-//#include "user_memory.h"
-
+#include "user_delay.h"
 
 HalLcdOpt_t g_lcdOpt;
 

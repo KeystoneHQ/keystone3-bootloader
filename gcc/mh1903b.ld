@@ -8,6 +8,13 @@ MEMORY
 
 SECTIONS
 {
+	.interrupts 0x01001000 :
+	{
+		. = ALIGN(4);
+		KEEP(*(.isr_vector))
+	} > FLASH
+
+	.fixSegment 0x01002000 : {KEEP(*(.fixSection))} > FLASH
 	.text :
 	{
 		. = 0x0;
