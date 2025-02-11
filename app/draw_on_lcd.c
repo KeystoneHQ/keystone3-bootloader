@@ -120,13 +120,6 @@ void DrawProgressBarOnLcd(uint16_t x, uint16_t y, uint16_t length, uint16_t widt
     while (LcdBusy());
 }
 
-void DrawImageOnLcd(uint16_t x, uint16_t y, uint16_t *colors, uint16_t width, uint16_t height)
-{
-    while (LcdBusy());
-    LcdDraw(x, y, x + width - 1, y + height - 1, colors);
-    while (LcdBusy());
-}
-
 static void DrawLetterOnLcd(uint16_t x, uint16_t y, uint16_t width, uint16_t height, lv_font_glyph_dsc_t *dsc, const uint8_t *map_p, uint16_t color)
 {
     uint16_t row, col, i, gapX, gapY, gapW, gapH, j;

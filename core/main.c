@@ -51,9 +51,6 @@ int main(void)
     if (OptionToRecoveryMode()) {
         RecoveryMode();
     }
-    uint32_t major, minor, build;
-    GetBootSoftwareVersion(&major, &minor, &build);
-    printf("boot version:%d.%d.%d\n", major, minor, build);
     FirmwareUpdate("1:pillar.bin");
     FirmwareUpdate("1:keystone3.bin");
     if (CheckApp() == false || CheckAppExist() == false) {

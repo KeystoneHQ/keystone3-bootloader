@@ -25,6 +25,8 @@
 #include "ctaes.h"
 #include "reduced_gl.h"
 #include "imgWarn.h"
+#include "imgInstall.h"
+#include "imgSecurity.h"
 
 #if (SIGNATURE_ENABLE == 1)
 #include "librust_c.h"
@@ -476,6 +478,7 @@ static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePa
     uint8_t content_hash[32];
 
     if (write) {
+        DrawRectPic(217, 300, IMGINSTALL_HEIGHT, IMGINSTALL_WIDTH, imgInstall);
         DrawStringOnLcd(190, 412, "Installing", 0xFFFF, &openSans_24);
         DrawStringOnLcd(215, 620, "               ", 0xFFFF, &openSans_24);
     } else {
@@ -531,6 +534,7 @@ static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePa
     sha256_done(&ctx, content_hash);
     PrintArray("content_hash", content_hash, 32);
     PrintArray("originalHash", info->originalHash, 32);
+#if (SIGNATURE_ENABLE == 1)
     uint8_t publickey[65] = {0};
     GetUpdatePubKey(publickey);
     if (memcmp(content_hash, info->originalHash, 32) == 0) {
@@ -561,6 +565,14 @@ static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePa
         vPortFree(signature);
         return ERR_UPDATE_CHECK_CRC_FAILED;
     }
+#else
+    char *signature = pvPortMalloc(4096);
+    memcpy(signature, info->originalSignature, sizeof(info->originalSignature));
+    QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+    printf("signature:%s\r\n", signature);
+    memset(signature, 0, 4096);
+    vPortFree(signature);
+#endif
     return SUCCESS_CODE;
 }
 
@@ -698,7 +710,8 @@ static bool CalculateFirmwareHash(uint8_t *hash, bool showProgress)
     sha256_context ctx;
     sha256_init(&ctx);
     if (showProgress) {
-        DrawStringOnLcd(155, 407, "Check firmware", 0xFFFF, &openSans_24);
+        DrawRectPic(204, 315, IMGSECURITY_HEIGHT, IMGSECURITY_WIDTH, imgSecurity);
+        DrawStringOnLcd(155, 407, "Security Booting", 0xFFFF, &openSans_24);
         DrawStringOnLcd(100, 457, "Verifying firmware, please wait", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
     }
 
@@ -738,8 +751,8 @@ void EnterSystemCallbackFunc(void)
 static void HandleFirmwareVerificationFailed(void)
 {
     ReducedGlInit();
+    DrawRectPic(204, 194, 72, 72, imgWarn);
     DrawStringOnLcd(135, 298, "Verification Failure", 0xFFFF, &openSans_24);
-    // DrawImageOnLcd(204, 194, g_imgWarn, 1, 1);
     DrawStringOnLcd(50, 350, "The firmware is incomplete, corrupted, or", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
     DrawStringOnLcd(55, 380, "possibly tampered with. Please wipe the", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
     DrawStringOnLcd(50, 410, "device and reinstall the firmware from the ", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
@@ -756,7 +769,6 @@ static void HandleFirmwareVerificationFailed(void)
         ReducedGlHandler();
     }
 }
-
 
 bool CalculateCheckSum(bool checkSum, const uint8_t *originalHash)
 {

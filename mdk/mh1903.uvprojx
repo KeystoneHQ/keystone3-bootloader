@@ -475,11 +475,6 @@
               <FilePath>..\mid\fatfs\user_fatfs.c</FilePath>
             </File>
             <File>
-              <FileName>cJSON.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\mid\param\cjson\cJSON.c</FilePath>
-            </File>
-            <File>
               <FileName>crc.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\mid\checksum\crc.c</FilePath>

@@ -358,6 +358,17 @@ static void DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t co
     vPortFree(colors);
 }
 
+void DrawRectPic(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *pic)
+{
+    WaitUntilDmaNotBusy();
+    uint16_t *colors;
+    colors = pvPortMalloc(w * h * sizeof(uint16_t));
+    for (uint32_t i = 0; i < w * h; i++) {
+        colors[i] = pic[i];
+    }
+    LcdDraw(x, y, x + w - 1, y + h - 1, (uint16_t *)colors);
+    vPortFree(colors);
+}
 
 static uint16_t GetTextWidth(const char *text, const lv_font_t *font)
 {
