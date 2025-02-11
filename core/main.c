@@ -91,8 +91,6 @@ int fputc(int ch, FILE *f)
     return ch;
 }
 
-
-
 void CmdIsrRcvByte(uint8_t byte)
 {
     static uint32_t rxF8Count = 0;

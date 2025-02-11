@@ -16,7 +16,6 @@
 #define APP_VERSION_ADDR        0x01082000
 #define APP_VERSION_HEAD        "Firmware v"
 
-
 //static bool CheckAllFF(const uint8_t *data, uint32_t length);
 
 LV_FONT_DECLARE(openSans_24);
