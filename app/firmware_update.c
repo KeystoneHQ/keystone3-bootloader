@@ -161,6 +161,10 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
         DrawStringOnLcd(73, 431, "The current firmware is incomplete,", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
         DrawStringOnLcd(63, 461, "damaged, or has been tampered with.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
         DrawStringOnLcd(40, 491, "Please re-download and retry the upgrade.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        DrawStringOnLcd(64, 668, "Download from the legitimate source:", 0xFFFF, &openSans_20);
+        c = 0x1BE0C6;
+        color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+        DrawStringOnLcd(115, 706, "https://keyst.one/firmware", color, &openSans_20);
         height = 600;
         break;
     case ERR_UPDATE_CHECK_SIGNATURE_FAILED:
@@ -172,7 +176,7 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
         DrawStringOnLcd(64, 668, "Download from the legitimate source:", 0xFFFF, &openSans_20);
         c = 0x1BE0C6;
         color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-        DrawStringOnLcd(115, 706, "https://keyst.one/firmware.", color, &openSans_20);
+        DrawStringOnLcd(115, 706, "https://keyst.one/firmware", color, &openSans_20);
         height = 488;
         break;
     case ERR_UPDATE_CHECK_VERSION_FAILED:
@@ -473,8 +477,6 @@ static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32
         return true;
     } else if (fileVersionNumber == nowVersionNumber) {
         return CalculateCheckSum(true, info->originalHash);
-        // } else if (fileMajor == 0 && fileMinor  == 0 && fileBuild == 1) {
-        //     return true;
     } else {
         return false;
     }
@@ -493,9 +495,10 @@ static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePa
 
     if (write) {
         DrawRectPic(217, 300, IMGINSTALL_HEIGHT, IMGINSTALL_WIDTH, imgInstall);
-        DrawStringOnLcd(190, 412, "Installing", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(190, 412, "Installing   ", 0xFFFF, &openSans_24);
         DrawStringOnLcd(215, 620, "               ", 0xFFFF, &openSans_24);
     } else {
+        DrawRectPic(217, 300, IMGINSTALL_HEIGHT, IMGINSTALL_WIDTH, imgSecurity);
         DrawStringOnLcd(190, 412, "Checking", 0xFFFF, &openSans_24);
     }
     DrawStringOnLcd(215, 620, "0%", 0xFFFF, &openSans_24);
@@ -646,7 +649,10 @@ static bool VerifyFirmwareSignature(const uint8_t *hash)
         return false;
     }
 
-    memcpy(signature, APP_END_ADDR - 4096, 256);
+    memcpy(signature, (uint32_t *)(APP_END_ADDR - 4096), 256);
+    if (CheckAllFF(signature, 256)) {
+        return false;
+    }
     bool isOK = verify_frimware_signature(signature, hash, publickey);
     vPortFree(signature);
 
@@ -747,7 +753,7 @@ static bool CalculateFirmwareHash(uint8_t *hash, bool showProgress)
     return true;
 }
 
-void EnterSystemCallbackFunc(void)
+void JumpToApp(void)
 {
     typedef int (*jumpApp)(void);
     volatile int *ptr = (int *)APP_ADDR;
@@ -778,7 +784,7 @@ static void HandleFirmwareVerificationFailed(void)
     CreateRadiusButton(36 + 32, 611, 408 - 64, 64, _COLOR_MAKE(0xF5, 0x58, 0x31),
                        _COLOR_MAKE(0xF5, 0x58, 0x31), "Wipe Device", WipeDeviceCallbackFunc);
     CreateRadiusButton(36 + 32, 698, 408 - 64, 64, _COLOR_MAKE(0x33, 0x33, 0x33),
-                       _COLOR_MAKE(0x33, 0x33, 0x33), "Enter System", EnterSystemCallbackFunc);
+                       _COLOR_MAKE(0x33, 0x33, 0x33), "Enter System", JumpToApp);
     while (1) {
         ReducedGlHandler();
     }

@@ -25,8 +25,6 @@
 static bool ReadTamperInput(void);
 #endif
 void CmdIsrRcvByte(uint8_t byte);
-static void JumpToApp(void);
-
 
 int main(void)
 {
@@ -73,8 +71,7 @@ int _write(int fd, char *pBuffer, int size)
     for (int i = 0; i < size; i++) {
         while (!UART_IsTXEmpty(UART0));
 #ifdef __GNUC__
-        // UART_SendData(UART0, '-');
-        UART_SendData(UART0, (uint8_t) pBuffer[i]);
+        UART_SendData(UART0, '-');
 #else
         UART_SendData(UART0, (uint8_t) pBuffer[i]);
 #endif
@@ -102,23 +99,6 @@ void CmdIsrRcvByte(uint8_t byte)
         rxF8Count = 0;
     }
 }
-
-
-static void JumpToApp(void)
-{
-    typedef int (*jumpApp)(void);
-    volatile int *ptr = (int *)APP_ADDR;
-    jumpApp app;
-
-    if (*ptr != 0xffffffff) {
-        app = (jumpApp)(*(__IO uint32_t*)(APP_ADDR + 4));
-        __disable_irq();
-        __set_MSP(*(__IO uint32_t*) APP_ADDR);
-
-        app();
-    }
-}
-
 
 #ifdef TAMPER_ENABLE
 static bool ReadTamperInput(void)

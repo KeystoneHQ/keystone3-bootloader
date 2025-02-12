@@ -40,5 +40,6 @@ typedef struct {
 void FirmwareUpdate(char *filePath);
 bool CalculateCheckSum(bool updateCheck, const uint8_t *originalHash);
 void CopyBin2Flash(void);
+void JumpToApp(void);
 
 #endif
