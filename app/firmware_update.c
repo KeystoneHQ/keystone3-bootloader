@@ -27,6 +27,7 @@
 #include "imgWarn.h"
 #include "imgInstall.h"
 #include "imgSecurity.h"
+#include "imgDamaged.h"
 
 #if (SIGNATURE_ENABLE == 1)
 #include "librust_c.h"
@@ -149,44 +150,57 @@ static void FirmwareUpdateErrorHandel(Error_Code errCode)
     char buff[32];
     uint32_t c = 0x666666;
     LcdFullScreen(0);
+    uint16_t height = 0;
     uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
     switch (errCode) {
     case ERR_UPDATE_CHECK_CRC_FAILED:
         c = 0xF55831;
         color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-        DrawStringOnLcd(130, 317, "Firmware Damaged", color, &openSans_24);
-        DrawStringOnLcd(73, 369, "The current firmware is incomplete.\nRe-download and retry the upgrade", 0xFFFF, &openSans_20);
+        DrawRectPic(204, 277, IMGDAMAGED_HEIGHT, IMGDAMAGED_WIDTH, imgDamaged);
+        DrawStringOnLcd(130, 381, "Firmware Damaged", color, &openSans_24);
+        DrawStringOnLcd(73, 431, "The current firmware is incomplete,", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        DrawStringOnLcd(63, 461, "damaged, or has been tampered with.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        DrawStringOnLcd(40, 491, "Please re-download and retry the upgrade.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        height = 600;
         break;
     case ERR_UPDATE_CHECK_SIGNATURE_FAILED:
         c = 0xF55831;
         color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-        DrawStringOnLcd(90, 302, "Firmware Verification Failed", color, &openSans_24);
-        DrawStringOnLcd(98, 354, "Firmware signature mismatch.", 0xFFFF, &openSans_20);
-        DrawStringOnLcd(64, 384, "Download from the legitimate source:", 0xFFFF, &openSans_20);
+        DrawRectPic(204, 277, IMGDAMAGED_HEIGHT, IMGDAMAGED_WIDTH, imgWarn);
+        DrawStringOnLcd(90, 381, "Firmware Verification Failed", color, &openSans_24);
+        DrawStringOnLcd(98, 431, "Firmware signature mismatch.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        DrawStringOnLcd(64, 668, "Download from the legitimate source:", 0xFFFF, &openSans_20);
         c = 0x1BE0C6;
         color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-        DrawStringOnLcd(115, 426, "https://keyst.one/firmware.", color, &openSans_20);
+        DrawStringOnLcd(115, 706, "https://keyst.one/firmware.", color, &openSans_20);
+        height = 488;
         break;
     case ERR_UPDATE_CHECK_VERSION_FAILED:
         c = 0xF55831;
         color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-        DrawStringOnLcd(160, 323, "Lower Version", color, &openSans_24);
-        DrawStringOnLcd(36, 375, "Make sure the new firmware version is higher", 0xFFFF, &openSans_20);
-        DrawStringOnLcd(90, 405, "than the current one on the device.", 0xFFFF, &openSans_20);
+        DrawRectPic(204, 230, IMGDAMAGED_HEIGHT, IMGDAMAGED_WIDTH, imgDamaged);
+        DrawStringOnLcd(160, 334, "Lower Version", color, &openSans_24);
+        DrawStringOnLcd(63, 382, "· The firmware version is less than or", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        DrawStringOnLcd(73, 412, "equal to the current device version.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        DrawStringOnLcd(63, 442, "· Please download and install the latest", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        DrawStringOnLcd(200, 472, "version.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        height = 534;
         break;
     case ERR_UPDATE_CHECK_FILE_MARK_FAILED:
         c = 0xF55831;
         color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
+        DrawRectPic(204, 230, IMGDAMAGED_HEIGHT, IMGDAMAGED_WIDTH, imgDamaged);
         DrawStringOnLcd(160, 323, "Lower Version", color, &openSans_24);
-        DrawStringOnLcd(45, 375, "Make sure the version is higher than 2.0", color, &openSans_20);
-        DrawStringOnLcd(90, 405, "Please download the firmware\n         version 2.0 or higher", 0xFFFF, &openSans_20);
+        DrawStringOnLcd(45, 375, "Make sure the version is higher than 2.0", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        DrawStringOnLcd(90, 405, "Please download the firmware\n         version 2.0 or higher", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        height = 534;
         break;
     default:
         break;
     }
     for (int i = 0; i < 9; i++) {
         sprintf(buff, "%d", 9 - i);
-        DrawStringOnLcd(234, 463, buff, 0xFFFF, &openSans_24);
+        DrawStringOnLcd(234, height, buff, 0xFFFF, &openSans_24);
         UserDelay(1000);
     }
 }
