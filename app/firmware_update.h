@@ -37,9 +37,10 @@ typedef struct {
 
 /// @brief Update firmware storaged in SD card or USB mass storage device.
 /// @param
-void FirmwareUpdate(char *filePath);
+void FirmwareUpdate(char *ilePath);
 bool CalculateCheckSum(bool updateCheck, const uint8_t *originalHash);
 void CopyBin2Flash(void);
 void JumpToApp(void);
+bool GetBootSecureCheckFlag(void);
 
 #endif
