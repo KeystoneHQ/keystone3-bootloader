@@ -247,8 +247,8 @@ void FirmwareUpdate(char *filePath)
     LcdInit();
     c = 0x666666;
     color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
-    DrawStringOnLcd(56, 460, "Please Keep the Device ON and Maintain", color, &openSans_20);
-    DrawStringOnLcd(175, 490, "Power Supply", color, &openSans_20);
+    DrawStringOnLcd(56, 460, "Please keep the device on and ensure a", color, &openSans_20);
+    DrawStringOnLcd(150, 490, "stable power supply.", color, &openSans_20);
     UserDelay(100);
     SetLcdBright(70);
     ret = UpdateFromOtaFile(&otaFileInfo, filePath, headSize);
@@ -257,7 +257,9 @@ void FirmwareUpdate(char *filePath)
         FirmwareUpdateErrorHandel(ret);
         return;
     }
-    CalculateCheckSum(false, NULL);
+    if (!GetBootSecureCheckFlag()) {
+        CalculateCheckSum(false, NULL);
+    }
     NVIC_SystemReset();
 }
 
@@ -495,11 +497,12 @@ static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePa
 
     if (write) {
         DrawRectPic(217, 300, IMGINSTALL_HEIGHT, IMGINSTALL_WIDTH, imgInstall);
-        DrawStringOnLcd(190, 412, "Installing   ", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(135, 422, "            ", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(130, 412, "          Installing              ", 0xFFFF, &openSans_24);
         DrawStringOnLcd(215, 620, "               ", 0xFFFF, &openSans_24);
     } else {
         DrawRectPic(217, 300, IMGINSTALL_HEIGHT, IMGINSTALL_WIDTH, imgSecurity);
-        DrawStringOnLcd(190, 412, "Checking", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(135, 412, "Upgrade Verification", 0xFFFF, &openSans_24);
     }
     DrawStringOnLcd(215, 620, "0%", 0xFFFF, &openSans_24);
     DrawProgressBarOnLcd(80, 594, 320, 9, 0, 0x21F4);
@@ -731,8 +734,8 @@ static bool CalculateFirmwareHash(uint8_t *hash, bool showProgress)
     sha256_init(&ctx);
     if (showProgress) {
         DrawRectPic(204, 315, IMGSECURITY_HEIGHT, IMGSECURITY_WIDTH, imgSecurity);
-        DrawStringOnLcd(155, 407, "Security Booting", 0xFFFF, &openSans_24);
-        DrawStringOnLcd(100, 457, "Verifying firmware, please wait", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+        DrawStringOnLcd(120, 407, "Firmware Verification", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(100, 457, "Checking firmware, please wait", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
     }
 
     for (int i = 0; i <= lastSector; i++) {
@@ -771,15 +774,16 @@ void JumpToApp(void)
 static void HandleFirmwareVerificationFailed(void)
 {
     ReducedGlInit();
-    DrawRectPic(204, 194, 72, 72, imgWarn);
-    DrawStringOnLcd(135, 298, "Verification Failure", 0xFFFF, &openSans_24);
-    DrawStringOnLcd(50, 350, "The firmware is incomplete, corrupted, or", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
-    DrawStringOnLcd(55, 380, "possibly tampered with. Please wipe the", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
-    DrawStringOnLcd(50, 410, "device and reinstall the firmware from the ", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
-    DrawStringOnLcd(165, 440, "official website.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
-    DrawStringOnLcd(50, 470, "Alternatively, you can access the systems", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
-    DrawStringOnLcd(55, 500, "now to transfer your assets to a secure ", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
-    DrawStringOnLcd(205, 530, "address.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawRectPic(204, 155, IMGWARN_HEIGHT, IMGWARN_WIDTH, imgWarn);
+    DrawStringOnLcd(135, 259, "Verification Failure", 0xFFFF, &openSans_24);
+    DrawStringOnLcd(60, 311, "Please reboot the device and try again. If", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(65, 341, "the issue persists, the firmware may be", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(50, 371, "incomplete or corrupted. Please wipe the", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(50, 401, "device and reinstall the firmware from the", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(165, 431, "official website.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(55, 461, "Alternatively, you can access the system", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(55, 491, "now to transfer your assets to a secure", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(190, 521, "address", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
 
     CreateRadiusButton(36 + 32, 611, 408 - 64, 64, _COLOR_MAKE(0xF5, 0x58, 0x31),
                        _COLOR_MAKE(0xF5, 0x58, 0x31), "Wipe Device", WipeDeviceCallbackFunc);
