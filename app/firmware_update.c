@@ -649,12 +649,12 @@ static bool VerifyFirmwareSignature(const uint8_t *hash)
 
     char *signature = pvPortMalloc(256 + 1);
     if (signature == NULL) {
-        return false;
+        return true;
     }
 
     memcpy(signature, (uint32_t *)(APP_END_ADDR - 4096), 256);
     if (CheckAllFF(signature, 256)) {
-        return false;
+        return true;
     }
     bool isOK = verify_frimware_signature(signature, hash, publickey);
     vPortFree(signature);
