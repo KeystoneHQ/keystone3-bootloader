@@ -8,14 +8,13 @@
 #include "draw_on_lcd.h"
 #include "drv_power.h"
 #include "drv_lcd_bright.h"
-
+#include "user_utils.h"
 
 #define CHECK_UNIT              256
 #define CHECK_SIZE              4096
 
 #define APP_VERSION_ADDR        0x01082000
 #define APP_VERSION_HEAD        "Firmware v"
-
 
 //static bool CheckAllFF(const uint8_t *data, uint32_t length);
 
@@ -28,7 +27,14 @@ bool CheckApp(void)
     uint8_t read[4096];
     uint32_t major, minor, build;
     memcpy(read, (void *)APP_VERSION_ADDR, 4096);
-    return GetSoftwareVersionFormData(&major, &minor, &build, read, 4096) == 0;
+    return GetSoftwareVersionFromData(&major, &minor, &build, read, 4096) == 0;
+}
+
+bool CheckAppExist(void)
+{
+    uint8_t read[4096];
+    memcpy(read, (void *)APP_ADDR, 4096);
+    return !CheckAllFF(read, 4096);
 }
 
 #define PILLAR_TEST_APP_MAJOR           (0)
@@ -50,11 +56,10 @@ void GetSoftwareVersion(uint32_t *major, uint32_t *minor, uint32_t *build)
     uint8_t read[4096];
 
     memcpy(read, (void *)APP_VERSION_ADDR, 4096);
-    GetSoftwareVersionFormData(major, minor, build, read, 4096);
+    GetSoftwareVersionFromData(major, minor, build, read, 4096);
 }
 
-
-int32_t GetSoftwareVersionFormData(uint32_t *major, uint32_t *minor, uint32_t *build, const uint8_t *data, uint32_t dataLen)
+int32_t GetSoftwareVersionFromData(uint32_t *major, uint32_t *minor, uint32_t *build, const uint8_t *data, uint32_t dataLen)
 {
     uint32_t versionInfoOffset = UINT32_MAX, i, headLen;
     char *versionStr, read[64];
@@ -81,7 +86,6 @@ int32_t GetSoftwareVersionFormData(uint32_t *major, uint32_t *minor, uint32_t *b
             break;
         }
         versionStr = read + headLen;
-        //printf("versionStr=%s\n", versionStr);
         ret = sscanf(versionStr, "%d.%d.%d", major, minor, build);
         if (ret != 3) {
             break;
@@ -95,15 +99,3 @@ int32_t GetSoftwareVersionFormData(uint32_t *major, uint32_t *minor, uint32_t *b
     }
     return succ ? 0 : -1;
 }
-
-
-//static bool CheckAllFF(const uint8_t *data, uint32_t length)
-//{
-//    for (uint32_t i = 0; i < length; i++) {
-//        if (data[i] != 0xFF) {
-//            return false;
-//        }
-//    }
-//    return true;
-//}
-

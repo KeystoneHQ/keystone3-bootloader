@@ -2,7 +2,6 @@
 #include "stdio.h"
 #include "string.h"
 #include "lv_font.h"
-//#include "lv_color.h"
 #include "hal_lcd.h"
 #include "assert.h"
 #include "user_delay.h"
@@ -23,7 +22,6 @@ typedef struct {
 
 
 static void DrawLetterOnLcd(uint16_t x, uint16_t y, uint16_t width, uint16_t height, lv_font_glyph_dsc_t *dsc, const uint8_t *map_p, uint16_t color);
-
 
 static LcdDrawColor_t g_bgColor = {0};
 
@@ -60,7 +58,6 @@ int16_t DrawStringOnLcd(uint16_t x, uint16_t y, const char *string, uint16_t col
             continue;
         }
         if (string[i] == '\n') {
-            //new line.
             xCursor = x;
             y += (charHeight + TEXT_LINE_GAP);
             continue;
@@ -68,10 +65,7 @@ int16_t DrawStringOnLcd(uint16_t x, uint16_t y, const char *string, uint16_t col
         charWidth = lv_font_get_glyph_width(font, string[i], string[i + 1]);
         bitmap = lv_font_get_glyph_bitmap(font, string[i]);
         lv_font_get_glyph_dsc(font, &dsc, string[i], string[i + 1]);
-        //printf("%c:\r\n", string[i]);
-        //printf("charWidth=%d,adv_w=%d,box_h=%d,box_w=%d,bpp=%d,is_placeholder=%d,ofs_x=%d,ofs_y=%d\r\n", charWidth, dsc.adv_w, dsc.box_h, dsc.box_w, dsc.bpp, dsc.is_placeholder, dsc.ofs_x, dsc.ofs_y);
         if (xCursor + charWidth >= LCD_DISPLAY_WIDTH - 1) {
-            //new line
             xCursor = x;
             y += (charHeight + TEXT_LINE_GAP);
         }
@@ -125,7 +119,6 @@ void DrawProgressBarOnLcd(uint16_t x, uint16_t y, uint16_t length, uint16_t widt
     LcdDraw(x, y, x + length - 1, y + width - 1, pixelMap);
     while (LcdBusy());
 }
-
 
 static void DrawLetterOnLcd(uint16_t x, uint16_t y, uint16_t width, uint16_t height, lv_font_glyph_dsc_t *dsc, const uint8_t *map_p, uint16_t color)
 {

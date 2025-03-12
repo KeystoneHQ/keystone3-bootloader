@@ -8,5 +8,7 @@
 bool OptionToRecoveryMode(void);
 void RecoveryMode(void);
 void RefreshFileStatus(void);
+void WipeDeviceCallbackFunc(void);
+void EnterRecoveryMode(void);
 
 #endif
