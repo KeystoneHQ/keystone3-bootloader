@@ -64,7 +64,7 @@ endfunction()
 if(COMPILE_BOOT)
     set(FIRMWARE_VERSION "0.0.1")
     message(STATUS "compile main firmware")
-    # add_subdirectory(rust)
+    add_subdirectory(rust)
     add_definitions(
     -DUSE_STDPERIPH_DRIVER 
     -DUSE_FULL_ASSERT 
