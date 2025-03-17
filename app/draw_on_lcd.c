@@ -25,7 +25,7 @@ static void DrawLetterOnLcd(uint16_t x, uint16_t y, uint16_t width, uint16_t hei
 
 static LcdDrawColor_t g_bgColor = {0};
 
-void PrintOnLcd(const lv_font_t *font, const char *format, ...)
+void PrintOnLcd(const lv_font_t *font, uint16_t color, const char *format, ...)
 {
     static uint16_t yCursor = 10;
     char str[DRAW_MAX_STRING_LEN];
@@ -33,7 +33,7 @@ void PrintOnLcd(const lv_font_t *font, const char *format, ...)
     va_start(argList, format);
     vsprintf(str, format, argList);
     printf(str);
-    yCursor = DrawStringOnLcd(10, yCursor, str, 0xFFFF, font);
+    yCursor = DrawStringOnLcd(10, yCursor, str, color, font);
     va_end(argList);
 }
 
