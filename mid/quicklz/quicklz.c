@@ -10,6 +10,7 @@
 // 1.5.0 final
 
 #include "quicklz.h"
+#include "assert.h"
 
 #if QLZ_VERSION_MAJOR != 1 || QLZ_VERSION_MINOR != 5 || QLZ_VERSION_REVISION != 0
 #error quicklz.c and quicklz.h have different versions
@@ -733,6 +734,7 @@ size_t qlz_compress(const void *source, char *destination, size_t size, qlz_stat
 size_t qlz_decompress(const char *source, void *destination, qlz_state_decompress *state)
 {
     size_t dsiz = qlz_size_decompressed(source);
+    assert(dsiz <= 0x4000);
 
 #if QLZ_STREAMING_BUFFER > 0
     if (state->stream_counter + qlz_size_decompressed(source) - 1 >= QLZ_STREAMING_BUFFER)
