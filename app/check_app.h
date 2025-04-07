@@ -5,6 +5,7 @@
 #include "stdbool.h"
 #include "err_code.h"
 
+bool CheckAppExist(void);
 bool CheckApp(void);
 bool CheckAppFactory(void);
 void GetSoftwareVersion(uint32_t *major, uint32_t *minor, uint32_t *build);

@@ -187,7 +187,6 @@
             <RvdsVP>2</RvdsVP>
             <RvdsMve>0</RvdsMve>
             <RvdsCdeCp>0</RvdsCdeCp>
-            <nBranchProt>0</nBranchProt>
             <hadIRAM2>0</hadIRAM2>
             <hadIROM2>0</hadIROM2>
             <StupSel>8</StupSel>
@@ -474,11 +473,6 @@
               <FileName>user_fatfs.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\mid\fatfs\user_fatfs.c</FilePath>
-            </File>
-            <File>
-              <FileName>cJSON.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\mid\param\cjson\cJSON.c</FilePath>
             </File>
             <File>
               <FileName>crc.c</FileName>

@@ -25,8 +25,6 @@
 static bool ReadTamperInput(void);
 #endif
 void CmdIsrRcvByte(uint8_t byte);
-static void JumpToApp(void);
-
 
 int main(void)
 {
@@ -41,7 +39,7 @@ int main(void)
     }
 #endif
     Uart0Init(CmdIsrRcvByte);
-    cm_backtrace_init("bootloader", "V1.0.0", "V1.0.0");
+    cm_backtrace_init("mh1903_boot", "V1.0.0", "V1.0.0");
     TrngInit();
     Gd25FlashInit();
     QspiFlashInit();
@@ -53,9 +51,16 @@ int main(void)
     }
     FirmwareUpdate("1:pillar.bin");
     FirmwareUpdate("1:keystone3.bin");
-    if (CheckApp() == false) {
+    if (CheckApp() == false || CheckAppExist() == false) {
         RecoveryMode();
     }
+    
+#if (SIGNATURE_ENABLE == 1)
+    if (GetBootSecureCheckFlag()) {
+        CalculateCheckSum(false, NULL);
+    }
+#endif
+
     JumpToApp();
     while (1);
 }
@@ -83,8 +88,6 @@ int fputc(int ch, FILE *f)
     return ch;
 }
 
-
-
 void CmdIsrRcvByte(uint8_t byte)
 {
     static uint32_t rxF8Count = 0;
@@ -96,23 +99,6 @@ void CmdIsrRcvByte(uint8_t byte)
         rxF8Count = 0;
     }
 }
-
-
-static void JumpToApp(void)
-{
-    typedef int (*jumpApp)(void);
-    volatile int *ptr = (int *)APP_ADDR;
-    jumpApp app;
-
-    if (*ptr != 0xffffffff) {
-        app = (jumpApp)(*(__IO uint32_t*)(APP_ADDR + 4));
-        __disable_irq();
-        __set_MSP(*(__IO uint32_t*) APP_ADDR);
-
-        app();
-    }
-}
-
 
 #ifdef TAMPER_ENABLE
 static bool ReadTamperInput(void)

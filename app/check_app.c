@@ -8,14 +8,13 @@
 #include "draw_on_lcd.h"
 #include "drv_power.h"
 #include "drv_lcd_bright.h"
-
+#include "user_utils.h"
 
 #define CHECK_UNIT              256
 #define CHECK_SIZE              4096
 
 #define APP_VERSION_ADDR        0x01082000
 #define APP_VERSION_HEAD        "Firmware v"
-
 
 //static bool CheckAllFF(const uint8_t *data, uint32_t length);
 
@@ -29,6 +28,13 @@ bool CheckApp(void)
     uint32_t major, minor, build;
     memcpy(read, (void *)APP_VERSION_ADDR, 4096);
     return GetSoftwareVersionFormData(&major, &minor, &build, read, 4096) == 0;
+}
+
+bool CheckAppExist(void)
+{
+    uint8_t read[4096];
+    memcpy(read, (void *)APP_ADDR, 4096);
+    return !CheckAllFF(read, 4096);
 }
 
 #define PILLAR_TEST_APP_MAJOR           (0)

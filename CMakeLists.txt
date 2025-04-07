@@ -94,7 +94,6 @@ if(COMPILE_BOOT)
         mid/log
         mid/msg
         mid/param
-        mid/param/cjson
         mid/checksum
         mid/utils
         mid/quicklz
@@ -140,7 +139,6 @@ if(COMPILE_BOOT)
         "mid/utils/*.c"
         "mid/checksum/*.c"
         "mid/quicklz/*.c"
-        "mid/param/cjson/*.c"
         "mid/reduced_gl/*.c"
     )
 
