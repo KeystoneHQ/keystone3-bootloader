@@ -14,7 +14,6 @@
 #include "drv_power.h"
 #include "user_fatfs.h"
 #include "firmware_update.h"
-#include "drv_usb.h"
 #include "check_app.h"
 #include "recovery_mode.h"
 #include "cm_backtrace.h"
@@ -46,7 +45,7 @@ int main(void)
     InitBootParam();
     PrintSystemInfo();
     MountUsbFatfs();
-    CopyBin2Flash();
+    CopyBin2Flash(false);
     if (OptionToRecoveryMode()) {
 #if VERSION_CHECK_ENABLE
         if (GetRecoveryModeFlag()) {
@@ -56,8 +55,7 @@ int main(void)
         RecoveryMode();
 #endif
     }
-    FirmwareUpdate("1:pillar.bin");
-    FirmwareUpdate("1:keystone3.bin");
+    FirmwareUpdate(UPDATE_KEYSTONE3_PATH);
     if ((CheckApp() == false || CheckAppExist() == false) && GetRecoveryModeFlag()) {
         RecoveryMode();
     }

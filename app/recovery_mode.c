@@ -8,7 +8,6 @@
 #include "draw_on_lcd.h"
 #include "drv_power.h"
 #include "drv_lcd_bright.h"
-#include "drv_usb.h"
 #include "reduced_gl.h"
 #include "drv_aw32001.h"
 #include "check_app.h"
@@ -17,13 +16,14 @@
 #include "firmware_update.h"
 #include "drv_ds28s60.h"
 #include "user_fatfs.h"
+#include "imgDamaged.h"
 
 
 LV_FONT_DECLARE(openSans_20);
 LV_FONT_DECLARE(openSans_24);
 
-#define BOOTLOADER_VERSION              "v0.2.1"
-const char g_softwareVersionString[] __attribute__((section(".fixSection"))) = "Boot v0.2.1";
+#define BOOTLOADER_VERSION              "v0.3.0"
+const char g_softwareVersionString[] __attribute__((section(".fixSection"))) = "Boot v0.3.0";
 
 #define BUTTON_PORT                     GPIOE
 #define BUTTON_PIN                      GPIO_Pin_14
@@ -38,9 +38,14 @@ const char g_softwareVersionString[] __attribute__((section(".fixSection"))) = "
 
 #define APP_VERSION_ADDR                0x01082000
 
+#define ORANGE_RED_COLOR                _COLOR_MAKE(0xF5, 0x56, 0x31)
+#define GRAY_COLOR                      _COLOR_MAKE(0x3C, 0x3C, 0x3C)
+#define DEEP_GRAY_COLOR                 _COLOR_MAKE(0x66, 0x66, 0x66)
+
 static void RecoveryModeMainMenu(void);
 static void PowerOffMenu(void);
 static void WipeDeviceMenu(void);
+static void CopyUpdateFirmwareMenu(void);
 
 static void RebootCallbackFunc(void);
 static void PowerOffCallbackFunc(void);
@@ -91,7 +96,6 @@ void RecoveryMode(void)
     LcdInit();
     UserDelay(100);
     SetLcdBright(70);
-    UsbInit();
     ReducedGlInit();
     RecoveryModeMainMenu();
 
@@ -115,12 +119,11 @@ static void RecoveryModeMainMenu(void)
     DeleteAllWidgets();
     CreateLabel(150, 120, 0xFFFF, "Recovery  Mode");
     CreateLabel(200, 160, 0xFFFF, BOOTLOADER_VERSION);
-#ifndef __GNUC__
-    CreateLabel(140, 200, _COLOR_MAKE(255, 0, 0), "*Developer Mode*");
-#endif
-    CreateRadiusButton(100, 300, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Reboot", RebootCallbackFunc);
-    CreateRadiusButton(100, 400, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Power Off", PowerOffMenu);
-    CreateRadiusButton(100, 500, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Wipe Device", WipeDeviceMenu);
+    CreateRadiusButton(100, 250, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Reboot", RebootCallbackFunc);
+    CreateRadiusButton(100, 350, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Power Off", PowerOffMenu);
+    CreateRadiusButton(100, 450, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Update (SD Card)", CopyUpdateFirmwareMenu);
+    CreateRadiusButton(100, 550, 280, 60, _COLOR_MAKE(0, 0, 255), _COLOR_MAKE(0, 0, 150), "Wipe Device", WipeDeviceMenu);
+
     if (CheckApp() == false) {
         CreateLabel(200, 650, 0xFFFF, "NO APP");
     } else {
@@ -147,17 +150,49 @@ static void PowerOffMenu(void)
     DeleteAllWidgets();
     CreateLabel(30, 120, 0xFFFF, "In order to shut down, please make");
     CreateLabel(30, 170, 0xFFFF, "sure to unplug the USB cable.");
-    CreateButton(150, 400, 180, 60, _COLOR_MAKE(255, 0, 0), _COLOR_MAKE(150, 0, 0), "OK", PowerOffCallbackFunc);
-    CreateButton(150, 500, 180, 60, _COLOR_MAKE(60, 60, 60), _COLOR_MAKE(30, 30, 30), "Cancel", RecoveryModeMainMenu);
+    CreateRadiusButton(133, 400, 213, 56, _COLOR_MAKE(255, 0, 0), _COLOR_MAKE(150, 0, 0), "OK", PowerOffCallbackFunc);
+    CreateRadiusButton(133, 500, 213, 56, _COLOR_MAKE(60, 60, 60), _COLOR_MAKE(30, 30, 30), "Cancel", RecoveryModeMainMenu);
+}
+
+static void CopyUpdateFirmwareMenu(void)
+{
+    DeleteAllWidgets();
+    Error_Code errCode = CopyBin2Flash(true);
+    if (errCode == SUCCESS_CODE) {
+        FirmwareUpdate(UPDATE_KEYSTONE3_PATH);
+        NVIC_SystemReset();
+    } else if (errCode == ERR_UPDATE_CHECK_FILE_EXIST) {
+        DeleteAllWidgets();
+        DrawRectPic(204, 176, IMGDAMAGED_HEIGHT, IMGDAMAGED_WIDTH, imgDamaged);
+        DrawStringOnLcd(120, 280, "Firmware Not Detected", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(50, 328, "Please ensure that your MicroSD card is ", DEEP_GRAY_COLOR, &openSans_20);
+        DrawStringOnLcd(28, 368, "formatted in FAT32 and contains the firmware", DEEP_GRAY_COLOR, &openSans_20);
+        DrawStringOnLcd(158, 408, "\"keystone3.bin\".", DEEP_GRAY_COLOR, &openSans_20);
+        CreateRadiusButton(133, 495, 213, 56, ORANGE_RED_COLOR, _COLOR_MAKE(150, 0, 0), "Retry", CopyUpdateFirmwareMenu);
+        CreateRadiusButton(133, 602, 213, 56, GRAY_COLOR, _COLOR_MAKE(30, 30, 30), "Cancel", RecoveryModeMainMenu);
+    } else if (errCode == ERR_UPDATE_MOUNT_FAILED) {
+        DeleteAllWidgets();
+        DrawRectPic(204, 176, IMGDAMAGED_HEIGHT, IMGDAMAGED_WIDTH, imgDamaged);
+        DrawStringOnLcd(85, 280, "MicroSD Card Not Detected", 0xFFFF, &openSans_24);
+        DrawStringOnLcd(36, 328, "Please ensure that you have properly inserted", DEEP_GRAY_COLOR, &openSans_20);
+        DrawStringOnLcd(158, 368, "the MicroSD Card.", DEEP_GRAY_COLOR, &openSans_20);
+        CreateRadiusButton(133, 495, 213, 56, ORANGE_RED_COLOR, _COLOR_MAKE(150, 0, 0), "Retry", CopyUpdateFirmwareMenu);
+        CreateRadiusButton(133, 602, 213, 56, GRAY_COLOR, _COLOR_MAKE(30, 30, 30), "Cancel", RecoveryModeMainMenu);
+    } else {
+        RecoveryModeMainMenu();
+    }
 }
 
 
 static void WipeDeviceMenu(void)
 {
     DeleteAllWidgets();
-    CreateLabel(50, 120, 0xFFFF, "Are you sure to wipe device?");
-    CreateButton(150, 400, 180, 60, _COLOR_MAKE(255, 0, 0), _COLOR_MAKE(150, 0, 0), "YES", WipeDeviceCallbackFunc);
-    CreateButton(150, 500, 180, 60, _COLOR_MAKE(60, 60, 60), _COLOR_MAKE(30, 30, 30), "Cancel", RecoveryModeMainMenu);
+    DrawStringOnLcd(168, 176, "Wipe Device", 0xFFFF, &openSans_24);
+    DrawStringOnLcd(31, 224, "By proceeding,all data on this device,including", DEEP_GRAY_COLOR, &openSans_20);
+    DrawStringOnLcd(41, 254, "all your wallets,will be permanently deleted.", DEEP_GRAY_COLOR, &openSans_20);
+    DrawStringOnLcd(120, 284, "Are you sure to wipe device?", DEEP_GRAY_COLOR, &openSans_20);
+    CreateRadiusButton(133, 495, 213, 56, _COLOR_MAKE(255, 0, 0), _COLOR_MAKE(150, 0, 0), "Yes", WipeDeviceCallbackFunc);
+    CreateRadiusButton(133, 602, 213, 56, _COLOR_MAKE(60, 60, 60), _COLOR_MAKE(30, 30, 30), "Cancel", RecoveryModeMainMenu);
 }
 
 
@@ -178,11 +213,10 @@ static void PowerOffCallbackFunc(void)
 
 void WipeDeviceCallbackFunc(void)
 {
-    uint32_t percent, lastPercent, addr;
+    uint32_t percent = 0, lastPercent = 0, addr;
     char percentStr[16];
     uint8_t pageData[32], page;
 
-    UsbDeInit();
     DeleteAllWidgets();
     ReducedGlHandler();
     DrawStringOnLcd(50, 120, "Wiping device now...", 0xFFFF, &openSans_20);
@@ -219,6 +253,10 @@ void WipeDeviceCallbackFunc(void)
             DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
         }
         if (addr == APP_VERSION_ADDR) {
+            continue;
+        }
+        if (addr == APP_ADDR) {
+            QspiFlashWriteFF(APP_ADDR, 4096);
             continue;
         }
         QspiFlashErase(addr);
@@ -263,8 +301,9 @@ static void RecoveryHandler(void)
             if (fileSize > 0) {
                 g_availableUpdateFile = true;
             }
+            f_close(&fp);
         }
-        res = f_open(&fp, "1:keystone3.bin", FA_OPEN_EXISTING | FA_READ);
+        res = f_open(&fp, UPDATE_KEYSTONE3_PATH, FA_OPEN_EXISTING | FA_READ);
         if (res) {
             printf("open error\r\n");
         } else {
@@ -273,6 +312,7 @@ static void RecoveryHandler(void)
             if (fileSize > 0) {
                 g_availableUpdateFile = true;
             }
+            f_close(&fp);
         }
         RecoveryModeMainMenu();
     }
