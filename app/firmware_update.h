@@ -10,13 +10,10 @@
 #define OTA_FILE_INFO_MARK_MAX_LEN          32
 #define SIGNATURE_LEN                       128
 
-#ifdef __GNUC__
-#define SIGNATURE_ENABLE        1
-#define VERSION_CHECK_ENABLE    1
-#else
-#define SIGNATURE_ENABLE        0
-#define VERSION_CHECK_ENABLE    0
-#endif
+#define SIGNATURE_ENABLE                    1
+#define VERSION_CHECK_ENABLE                1
+#define SD_CARD_KEYSTONE3_PATH              "0:keystone3.bin"
+#define UPDATE_KEYSTONE3_PATH               "1:keystone3.bin"
 
 //OTA file head info.m
 typedef struct {
@@ -39,12 +36,13 @@ typedef struct {
 /// @param
 void FirmwareUpdate(char *ilePath);
 bool CalculateCheckSum(bool updateCheck, const uint8_t *originalHash);
-void CopyBin2Flash(void);
+Error_Code CopyBin2Flash(bool app2app);
 void JumpToApp(void);
 bool GetBootSecureCheckFlag(void);
 bool GetRecoveryModeFlag(void);
 void InitBootParam(void);
 void ResetBootParam(void);
 bool GetFactoryResult(void);
+void QspiFlashWriteFF(uint32_t addr, uint32_t size);
 
 #endif

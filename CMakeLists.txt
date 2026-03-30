@@ -73,7 +73,6 @@ if(COMPILE_BOOT)
     -DARM_MATH_CM4 
     -D__TARGET_FPU_VFP 
     -DNDEBUG -DATCA_HAL_I2C
-    -DCONFIG_USB_DEVICE_MSC
 #    -DRUST_MEMORY_DEBUG
     )
     print_firmware_info()
@@ -82,12 +81,6 @@ if(COMPILE_BOOT)
         Inc
         core
         driver
-        driver/usb
-        mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Class/msc/inc
-        mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Class/cdc/inc
-        mh1903_lib/SCPU_USB_Lib/SCPU_USB_OTG_Driver/inc
-        mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Core/inc
-        mh1903_lib/USB-ESL
         cm_backtrace
         mid/ram
         mid/fatfs
@@ -121,15 +114,6 @@ if(COMPILE_BOOT)
     aux_source_directory(core/ core)
     aux_source_directory(crypto/ crypto)
 
-    file(GLOB_RECURSE usb
-        "driver/usb/*.c"
-        "mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Core/src/*.c"
-        "mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Class/msc/src/*.c"
-        "mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Class/cdc/src/*.c"
-        "mh1903_lib/SCPU_USB_Lib/SCPU_USB_OTG_Driver/src/*.c"
-        "mh1903_lib/USB-ESL/CircularBuffer.c"    
-    )
-
     file (GLOB mid
         "mid/fatfs/*.c"
         "mid/log/*.c"
@@ -152,7 +136,6 @@ if(COMPILE_BOOT)
         ${cm_backtrace}
         ${app} 
         ${crypto} 
-        ${usb}
         ${mid}
         ${core}
         ${ctaes}

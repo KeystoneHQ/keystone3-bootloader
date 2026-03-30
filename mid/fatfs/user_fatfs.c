@@ -111,9 +111,10 @@ int FatfsFileDelete(const TCHAR* path)
 #define FATFS_COPY_BUFFER_SIZE              4096
 int FatfsFileCopy(const TCHAR* source, const TCHAR* dest)
 {
-    FRESULT res;
-    FIL fpSource, fpDest;
-    uint32_t fileSize, actualSize, copyOffset, totalSize;
+    FRESULT res = FR_INT_ERR;
+    FIL fpSource = {0}, fpDest = {0};
+    uint8_t sourceOpened = 0, destOpened = 0;
+    uint32_t fileSize, actualSize, copyOffset, totalSize, requestSize;
     uint8_t *data = NULL;
     uint8_t oldPercent = 0;
     char percentStr[16];
@@ -123,17 +124,27 @@ int FatfsFileCopy(const TCHAR* source, const TCHAR* dest)
         res = f_open(&fpSource, source, FA_OPEN_EXISTING | FA_READ);
         if (res) {
             FatfsError(res);
-            return res;
+            break;
         }
+        sourceOpened = 1;
         res = f_open(&fpDest, dest, FA_CREATE_ALWAYS | FA_WRITE);
         if (res) {
             FatfsError(res);
             break;
         }
+        destOpened = 1;
         fileSize = f_size(&fpSource);
+        if (fileSize == 0) {
+            res = FR_OK;
+            break;
+        }
         data = pvPortMalloc(FATFS_COPY_BUFFER_SIZE);
+        if (data == NULL) {
+            res = FR_NOT_ENOUGH_CORE;
+            break;
+        }
         totalSize = 0;
-        for (copyOffset = 0; copyOffset <= fileSize; copyOffset += FATFS_COPY_BUFFER_SIZE) {
+        for (copyOffset = 0; copyOffset < fileSize; copyOffset += FATFS_COPY_BUFFER_SIZE) {
             if (!SdCardInsert()) {
                 res = ERR_GENERAL_FAIL;
                 break;
@@ -148,9 +159,14 @@ int FatfsFileCopy(const TCHAR* source, const TCHAR* dest)
                 DrawProgressBarOnLcd(80, 594, 320, 9, percent, 0x21F4);
             }
 
-            res = f_read(&fpSource, data, FATFS_COPY_BUFFER_SIZE, &actualSize);
+            requestSize = (fileSize - copyOffset > FATFS_COPY_BUFFER_SIZE) ? FATFS_COPY_BUFFER_SIZE : (fileSize - copyOffset);
+            res = f_read(&fpSource, data, requestSize, &actualSize);
             if (res) {
                 FatfsError(res);
+                break;
+            }
+            if (actualSize == 0) {
+                res = FR_DISK_ERR;
                 break;
             }
             totalSize += actualSize;
@@ -163,9 +179,15 @@ int FatfsFileCopy(const TCHAR* source, const TCHAR* dest)
         }
 
     } while (0);
-    vPortFree(data);
-    f_close(&fpSource);
-    f_close(&fpDest);
+    if (data != NULL) {
+        vPortFree(data);
+    }
+    if (sourceOpened) {
+        f_close(&fpSource);
+    }
+    if (destOpened) {
+        f_close(&fpDest);
+    }
     printf("copy done\n");
     return res;
 }

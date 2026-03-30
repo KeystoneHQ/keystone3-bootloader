@@ -1,8 +1,9 @@
-#include "firmware_update.h"
-#include "stdio.h"
-#include "string.h"
-#include "stdlib.h"
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include "user_fatfs.h"
+#include "firmware_update.h"
 #include "ff.h"
 #include "crc.h"
 #include "quicklz.h"
@@ -65,6 +66,12 @@ typedef struct {
 } BootParam_t;
 static BootParam_t g_bootParam;
 
+typedef struct {
+    uint32_t major;
+    uint32_t minor;
+    uint32_t build;
+} VersionInfo_t;
+
 #define FILE_MARK_MCU_FIRMWARE "~update!"
 #define FILE_MARK_MCU_FIRMWARE_2_0 "~fwdata!"
 
@@ -74,28 +81,43 @@ static BootParam_t g_bootParam;
 #define FIXED_SEGMENT_OFFSET 0x1000
 
 #define UPDATE_PUB_KEY_LEN 64
-#define SD_CARD_PILLAR_PATH "0:pillar.bin"
-#define USB_PILLAR_PATH "1:pillar.bin"
-#define SD_CARD_KETSTONE3_PATH "0:keystone3.bin"
-#define USB_KETSTONE3_PATH "1:keystone3.bin"
+#define SD_CARD_PILLAR_PATH                     "0:pillar.bin"
+#define SD_F_CARD_KETSTONE3_PATH                "0:f_keystone3.bin"
 
 #define SECTOR_SIZE                                         4096
 #define APP_ADDR                                            (0x1001000 + 0x80000) // 108 1000
 #define APP_CHECK_START_ADDR                                (0x1400000)
 #define APP_END_ADDR                                        (0x2000000)
+#define APP_SIGNATURE_ADDR                                  (APP_END_ADDR - 4096)
+#define APP_FLASH_START_ADDR                                (APP_ADDR)
+#define APP_FLASH_END_ADDR                                  (APP_SIGNATURE_ADDR)
+#define SRAM_START_ADDR                                     (0x20000000)
+#define SRAM_END_ADDR                                       (0x20100000)
 #define BOOT_SECURE_PARAM_FLAG                              (0x00F6D800)
 #define BOOT_SECURE_PARAM_FLAG_SIZE                         (0x1000)
 #define OTA_ADDR_FACTORY_BASE                               (0x40009400)
+#define VERSION_COMPONENT_MAX                               (99U)
 
 static uint8_t g_fileUnit[FILE_UNIT_SIZE + 16];
 static uint8_t g_dataUnit[DATA_UNIT_SIZE];
+static bool g_shouldWriteOtpVersionHistory = false;
+static VersionInfo_t g_pendingOtpVersion = {0};
 
 static uint32_t BytesToUint32BE(char *bytes);
 static bool IsHexChar(char c);
+static bool IsAddressInRange(uint32_t addr, uint32_t start, uint32_t end);
+static bool IsValidAppVector(uint32_t msp, uint32_t resetHandler);
 static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath);
 static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pHeadSize);
 static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
 static int32_t UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize);
+static bool IsValidVersionComponent(uint32_t major, uint32_t minor, uint32_t build);
+static uint32_t BuildVersionNumber(uint32_t major, uint32_t minor, uint32_t build);
+static int32_t CompareVersion(VersionInfo_t lhs, VersionInfo_t rhs);
+static uint32_t PackVersionToWord(VersionInfo_t version);
+static VersionInfo_t UnpackVersionFromWord(uint32_t word);
+bool GetLatestOtpHistoryVersion(VersionInfo_t *version, uint32_t *lastAddr, uint32_t *nextAddr);
+static void TryWriteVersionHistoryToOtp(void);
 static void AesEncryptBuffer(uint8_t *cipher, uint32_t sz, uint8_t *plain);
 void AesDecryptBuffer(uint8_t *plain, uint32_t sz, uint8_t *cipher);
 int SaveBootParam(void);
@@ -123,53 +145,80 @@ static const uint8_t g_recoveryModeFlag[16] = {
 };
 typedef enum {
     UPDATE_TO_FACTORY_BIN,
-    UPDATE_TO_APP_BIN,
+    UPDATE_FACTORY_TO_APP_BIN,
+    UPDATE_APP_TO_APP_BIN,
     UPDATE_BIN_BUTT,
 } UpdateType_t;
 
-void CopyBin2Flash(void)
+Error_Code CopyBin2Flash(bool app2app)
 {
-#ifndef __GNUC__
-    return;
-#endif
     int32_t ret;
-    uint8_t updateType = UPDATE_BIN_BUTT;
+    UpdateType_t updateType = UPDATE_BIN_BUTT;
+    const char *srcPath = NULL;
+    const char *showText = NULL;
+    const char *fileName = NULL;
 
     if (CheckApp() == false) {
         updateType = UPDATE_TO_FACTORY_BIN;
     } else if (CheckAppFactory()) {
-        updateType = UPDATE_TO_APP_BIN;
+        updateType = UPDATE_FACTORY_TO_APP_BIN;
+    } else if (app2app) {
+        updateType = UPDATE_APP_TO_APP_BIN;
     } else {
-        return;
+        return ERR_UPDATE_INVALID_TYPE;
     }
 
-    OpenPower(POWER_TYPE_VCC33);
-    UserDelay(100);
-    // MountSdFatfs();
+    switch (updateType) {
+    case UPDATE_TO_FACTORY_BIN:
+        srcPath = SD_CARD_PILLAR_PATH;
+        showText = "Copying  pillar";
+        fileName = "pillar.bin";
+        break;
+    case UPDATE_FACTORY_TO_APP_BIN:
+        srcPath = SD_F_CARD_KETSTONE3_PATH;
+        showText = "Copying  keystone3";
+        fileName = "f_keystone3.bin";
+        break;
+    case UPDATE_APP_TO_APP_BIN:
+        srcPath = SD_CARD_KEYSTONE3_PATH;
+        showText = "Copying  keystone3";
+        fileName = "keystone3.bin";
+        break;
+    default:
+        return ERR_UPDATE_INVALID_TYPE;
+    }
+
+    if (updateType != UPDATE_APP_TO_APP_BIN) {
+        OpenPower(POWER_TYPE_VCC33);
+        UserDelay(100);
+        LcdCheck();
+        LcdInit();
+        UserDelay(100);
+        SetLcdBright(70);
+    }
+    
     if (FR_OK != MountSdFatfs()) {
-        return;
+        printf("MountSdFatfs failed\r\n");
+        return ERR_UPDATE_MOUNT_FAILED;
     }
-    LcdCheck();
-    LcdInit();
-    UserDelay(100);
-    SetLcdBright(70);
-    if (updateType == UPDATE_TO_FACTORY_BIN) {
-        if (FatfsFileExist(SD_CARD_PILLAR_PATH)) {
-            DrawStringOnLcd(140, 480, "Copying  pillar", 0xFFFF, &openSans_24);
-            ret = FatfsFileCopy(SD_CARD_PILLAR_PATH, USB_PILLAR_PATH);
-            if (ret == FR_OK) {
-                printf("copy pillar.bin to usb success\r\n");
-            }
-        }
-    } else if (updateType == UPDATE_TO_APP_BIN) {
-        if (FatfsFileExist(SD_CARD_KETSTONE3_PATH)) {
-            DrawStringOnLcd(140, 480, "Copying  keystone3", 0xFFFF, &openSans_24);
-            ret = FatfsFileCopy(SD_CARD_KETSTONE3_PATH, USB_KETSTONE3_PATH);
-            if (ret == FR_OK) {
-                printf("copy keystone3.bin to usb success\r\n");
-            }
-        }
+
+    if (!FatfsFileExist(srcPath)) {
+        printf("source file not found: %s\r\n", srcPath);
+        return ERR_UPDATE_CHECK_FILE_EXIST;
     }
+
+    DrawStringOnLcd(140, 346, showText, 0xFFFF, &openSans_24);
+    DrawStringOnLcd(50, 394, "Do not remove the MicroSD Card while the", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    DrawStringOnLcd(158, 434, "update is underway.", _COLOR_MAKE(0x66, 0x66, 0x66), &openSans_20);
+    ret = FatfsFileCopy(srcPath, UPDATE_KEYSTONE3_PATH);
+    if (ret != FR_OK) {
+        FatfsError((FRESULT)ret);
+        printf("copy %s to usb failed, ret=%d\r\n", fileName, ret);
+        return ERR_UPDATE_CHECK_FILE_EXIST;
+    }
+
+    printf("copy %s to device success\r\n", fileName);
+    return SUCCESS_CODE;
 }
 
 static void FirmwareUpdateErrorHandel(Error_Code errCode)
@@ -246,6 +295,7 @@ void FirmwareUpdate(char *filePath)
     uint16_t color = (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5));
     uint32_t headSize;
 
+    g_shouldWriteOtpVersionHistory = false;
     ret = CheckOtaFile(&otaFileInfo, filePath, &headSize);
     if (ret != SUCCESS_CODE) {
         if (ret == ERR_UPDATE_CHECK_FILE_EXIST) {
@@ -287,6 +337,7 @@ void FirmwareUpdate(char *filePath)
     if (!GetBootSecureCheckFlag()) {
         CalculateCheckSum(false, NULL);
     }
+    TryWriteVersionHistoryToOtp();
     NVIC_SystemReset();
 }
 
@@ -299,17 +350,22 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
     FIL fp;
     int32_t ret;
     uint32_t headSize = 0, readSize;
+    uint32_t dataOffset = 0;
     char *headStr = NULL;
 
     ret = f_open(&fp, filePath, FA_OPEN_EXISTING | FA_READ);
     do {
         if (ret) {
             FatfsError((FRESULT)ret);
-            break;
+            return ERR_UPDATE_CHECK_FILE_EXIST;
         }
         ret = f_read(&fp, &headSize, 4, (UINT *)&readSize);
-        if (ret) {
+        if (ret || readSize != 4) {
             FatfsError((FRESULT)ret);
+            break;
+        }
+        if (headSize == 0 || headSize >= FILE_UNIT_SIZE) {
+            printf("invalid headSize=%d\r\n", headSize);
             break;
         }
         printf("headSize=%d\r\n", headSize);
@@ -327,6 +383,8 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
             printf("read err,readSize=%d,headSize=%d\r\n", readSize, headSize);
             break;
         }
+        headStr[headSize] = '\0';
+        memset(info->mark, 0, sizeof(info->mark));
         memcpy(info->mark, headStr, 8);
         if (strcmp(info->mark, FILE_MARK_MCU_FIRMWARE_2_0) != 0) {
             printf("file info mark err\r\n");
@@ -350,16 +408,19 @@ static uint32_t GetOtaFileInfo(OtaFileInfo_t *info, const char *filePath)
         printf("info->encode=%d\r\n", info->encode);
         printf("info->encodeUnit=%d\r\n", info->encodeUnit);
         printf("info->encrypt=%d\r\n", info->encrypt);
+        memset(info->signature, 0, sizeof(info->signature));
         memcpy(info->signature, headStr + SIGNATURE_OFFSET, SIGNATURE_LEN);
         printf("info->signature=%s\r\n", info->signature);
+        memset(info->originalSignature, 0, sizeof(info->originalSignature));
         memcpy(info->originalSignature, headStr + ORIGINAL_SIGNATURE_OFFSET, SIGNATURE_LEN);
         printf("info->originalSignature=%s\r\n", info->originalSignature);
+        dataOffset = headSize + 5; // 4 byte uint32 and 1 byte string '\0' end.
     } while (0);
     if (headStr != NULL) {
         vPortFree(headStr);
     }
     f_close(&fp);
-    return headSize + 5; // 4 byte uint32 and 1 byte string '\0' end.
+    return dataOffset;
 }
 
 static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t *pHeadSize)
@@ -373,7 +434,7 @@ static int32_t CheckOtaFile(OtaFileInfo_t *info, const char *filePath, uint32_t 
     headSize = GetOtaFileInfo(info, filePath);
     if (headSize == 0 || headSize >= FILE_UNIT_SIZE) {
         return ERR_UPDATE_CHECK_FILE_MARK_FAILED;
-    } 
+    }
     *pHeadSize = headSize;
     ret = f_open(&fp, filePath, FA_OPEN_EXISTING | FA_READ);
     if (ret) {
@@ -462,52 +523,248 @@ static bool CheckVersion(const OtaFileInfo_t *info, const char *filePath, uint32
 {
     FIL fp;
     int32_t ret;
-    uint32_t readSize, cmpsdSize, decmpsdSize;
+    uint32_t fileSize, readSize, cmpsdSize, decmpsdSize;
+    uint32_t decmpsdRet;
     qlz_state_decompress qlzState = {0};
-    uint32_t nowMajor, nowMinor, nowBuild;
-    uint32_t fileMajor, fileMinor, fileBuild;
+    VersionInfo_t nowVersion = {0};
+    VersionInfo_t fileVersion = {0};
+    VersionInfo_t otpVersion = {0};
+    bool hasOtpVersion;
+    bool fileMajorMinorHigherThanOtp = true;
+    int32_t cmpFileNow;
 
+    g_shouldWriteOtpVersionHistory = false;
     ret = f_open(&fp, filePath, FA_OPEN_EXISTING | FA_READ);
     if (ret) {
         FatfsError((FRESULT)ret);
         return false;
     }
+    fileSize = f_size(&fp);
     f_lseek(&fp, headSize);
     ret = f_read(&fp, g_fileUnit, 16, (UINT *)&readSize);
-    if (ret) {
+    if (ret || readSize != 16) {
         FatfsError((FRESULT)ret);
         f_close(&fp);
         return false;
     }
     cmpsdSize = qlz_size_compressed((char *)g_fileUnit);
     decmpsdSize = qlz_size_decompressed((char *)g_fileUnit);
+    if (cmpsdSize < 16 || cmpsdSize > sizeof(g_fileUnit) ||
+            decmpsdSize == 0 || decmpsdSize > sizeof(g_dataUnit) ||
+            cmpsdSize > (fileSize - headSize) || decmpsdSize <= FIXED_SEGMENT_OFFSET) {
+        printf("invalid block size: c=%d, d=%d\r\n", cmpsdSize, decmpsdSize);
+        f_close(&fp);
+        return false;
+    }
     printf("cmpsdSize=%d,decmpsdSize=%d\r\n", cmpsdSize, decmpsdSize);
     ret = f_read(&fp, g_fileUnit + 16, cmpsdSize - 16, (UINT *)&readSize);
-    if (ret) {
+    if (ret || readSize != cmpsdSize - 16) {
         FatfsError((FRESULT)ret);
         f_close(&fp);
         return false;
     }
-    qlz_decompress((char *)g_fileUnit, g_dataUnit, &qlzState);
-    GetSoftwareVersion(&nowMajor, &nowMinor, &nowBuild);
-    GetSoftwareVersionFromData(&fileMajor, &fileMinor, &fileBuild, g_dataUnit + FIXED_SEGMENT_OFFSET, decmpsdSize - FIXED_SEGMENT_OFFSET);
-    printf("now version:%d.%d.%d\n", nowMajor, nowMinor, nowBuild);
-    printf("file version:%d.%d.%d\n", fileMajor, fileMinor, fileBuild);
-
-    // each valid number should be from (0~99)
-    uint32_t epoch = 100;
-    uint32_t nowVersionNumber = (nowMajor * epoch * epoch) + (nowMinor * epoch) + nowBuild;
-    uint32_t fileVersionNumber = (fileMajor * epoch * epoch) + (fileMinor * epoch) + fileBuild;
-
-    if ((nowMajor == 99 && nowMinor == 99 && nowBuild == 99)) {
-        return true;
-    } else if (fileVersionNumber > nowVersionNumber) {
-        return true;
-    } else if (fileVersionNumber == nowVersionNumber) {
-        return (!CheckAppExist() || CalculateCheckSum(true, info->originalHash));
-    } else {
+    decmpsdRet = qlz_decompress((char *)g_fileUnit, g_dataUnit, &qlzState);
+    if (decmpsdRet != decmpsdSize) {
+        printf("decompress size mismatch:%d,%d\r\n", decmpsdRet, decmpsdSize);
+        f_close(&fp);
         return false;
     }
+    GetSoftwareVersion(&nowVersion.major, &nowVersion.minor, &nowVersion.build);
+    GetSoftwareVersionFromData(&fileVersion.major, &fileVersion.minor, &fileVersion.build,
+                               g_dataUnit + FIXED_SEGMENT_OFFSET, decmpsdSize - FIXED_SEGMENT_OFFSET);
+    f_close(&fp);
+    printf("now version:%d.%d.%d\n", nowVersion.major, nowVersion.minor, nowVersion.build);
+    printf("file version:%d.%d.%d\n", fileVersion.major, fileVersion.minor, fileVersion.build);
+
+    if (!IsValidVersionComponent(nowVersion.major, nowVersion.minor, nowVersion.build) ||
+            !IsValidVersionComponent(fileVersion.major, fileVersion.minor, fileVersion.build)) {
+        printf("invalid version number, now=%d.%d.%d file=%d.%d.%d\n",
+               nowVersion.major, nowVersion.minor, nowVersion.build,
+               fileVersion.major, fileVersion.minor, fileVersion.build);
+        return false;
+    }
+
+    hasOtpVersion = GetLatestOtpHistoryVersion(&otpVersion, NULL, NULL);
+    if (hasOtpVersion) {
+        int32_t cmpToOtp;
+        printf("otp threshold version:%d.%d.%d\n", otpVersion.major, otpVersion.minor, otpVersion.build);
+        cmpToOtp = CompareVersion(fileVersion, otpVersion);
+        if (cmpToOtp < 0) {
+            printf("file version lower than otp threshold\n");
+            return false;
+        }
+        fileMajorMinorHigherThanOtp =
+            (fileVersion.major > otpVersion.major) ||
+            (fileVersion.major == otpVersion.major && fileVersion.minor > otpVersion.minor);
+    } else {
+        printf("no otp history version found\n");
+        fileMajorMinorHigherThanOtp = true;
+    }
+
+    cmpFileNow = CompareVersion(fileVersion, nowVersion);
+    if (cmpFileNow > 0) {
+        // pass
+    } else if (cmpFileNow == 0) {
+        if (!(!CheckAppExist() || CalculateCheckSum(true, info->originalHash))) {
+            return false;
+        }
+    } else {
+        printf("file version lower than current version\n");
+        return false;
+    }
+
+    if (cmpFileNow > 0 && fileMajorMinorHigherThanOtp) {
+        g_pendingOtpVersion = fileVersion;
+        g_shouldWriteOtpVersionHistory = true;
+        printf("pending otp history record:%d.%d.%d\n",
+               g_pendingOtpVersion.major, g_pendingOtpVersion.minor, g_pendingOtpVersion.build);
+    }
+
+    return true;
+}
+
+static bool IsValidVersionComponent(uint32_t major, uint32_t minor, uint32_t build)
+{
+    return (major <= VERSION_COMPONENT_MAX && minor <= VERSION_COMPONENT_MAX && build <= VERSION_COMPONENT_MAX);
+}
+
+static uint32_t BuildVersionNumber(uint32_t major, uint32_t minor, uint32_t build)
+{
+    const uint32_t epoch = 100;
+
+    return (major * epoch * epoch) + (minor * epoch) + build;
+}
+
+static int32_t CompareVersion(VersionInfo_t lhs, VersionInfo_t rhs)
+{
+    uint32_t lhsNumber = BuildVersionNumber(lhs.major, lhs.minor, lhs.build);
+    uint32_t rhsNumber = BuildVersionNumber(rhs.major, rhs.minor, rhs.build);
+
+    if (lhsNumber > rhsNumber) {
+        return 1;
+    }
+    if (lhsNumber < rhsNumber) {
+        return -1;
+    }
+    return 0;
+}
+
+static uint32_t PackVersionToWord(VersionInfo_t version)
+{
+    return ((version.major & 0xFFU) << 16) | ((version.minor & 0xFFU) << 8) | (version.build & 0xFFU);
+}
+
+static VersionInfo_t UnpackVersionFromWord(uint32_t word)
+{
+    VersionInfo_t version = {0};
+
+    version.major = (word >> 16) & 0xFFU;
+    version.minor = (word >> 8) & 0xFFU;
+    version.build = word & 0xFFU;
+
+    return version;
+}
+
+bool GetLatestOtpHistoryVersion(VersionInfo_t *version, uint32_t *lastAddr, uint32_t *nextAddr)
+{
+    uint32_t addr;
+    uint32_t latestAddr = 0;
+    uint32_t writeAddr = OTP_ADDR_WEB_AUTH_RSA_KEY;
+    uint32_t readWord;
+    bool hasVersion = false;
+    VersionInfo_t latestVersion = {0};
+
+    OTP_PowerOn();
+    for (addr = OTP_ADDR_VERISON_HISTROY; addr < OTP_ADDR_WEB_AUTH_RSA_KEY; addr += sizeof(uint32_t)) {
+        memcpy(&readWord, (uint8_t *)((uint32_t)addr), sizeof(readWord));
+        if (readWord == UINT32_MAX) {
+            writeAddr = addr;
+            break;
+        }
+
+        latestVersion = UnpackVersionFromWord(readWord);
+        if (!IsValidVersionComponent(latestVersion.major, latestVersion.minor, latestVersion.build)) {
+            printf("invalid otp history version word=%#x,addr=%#x\n", readWord, addr);
+            writeAddr = addr;
+            break;
+        }
+
+        hasVersion = true;
+        latestAddr = addr;
+    }
+
+    if (hasVersion && version != NULL) {
+        *version = latestVersion;
+    }
+    if (lastAddr != NULL) {
+        *lastAddr = latestAddr;
+    }
+    if (nextAddr != NULL) {
+        *nextAddr = writeAddr;
+    }
+
+    return hasVersion;
+}
+
+static void TryWriteVersionHistoryToOtp(void)
+{
+    int32_t ret;
+    uint32_t writeAddr;
+    uint32_t versionWord;
+    uint32_t verifyWord = UINT32_MAX;
+    uint32_t lastAddr = 0;
+    bool hasLatest;
+    VersionInfo_t latestVersion = {0};
+
+    if (!g_shouldWriteOtpVersionHistory) {
+        return;
+    }
+
+    if (!IsValidVersionComponent(g_pendingOtpVersion.major, g_pendingOtpVersion.minor, g_pendingOtpVersion.build)) {
+        printf("skip otp history write: invalid pending version=%d.%d.%d\n",
+               g_pendingOtpVersion.major, g_pendingOtpVersion.minor, g_pendingOtpVersion.build);
+        g_shouldWriteOtpVersionHistory = false;
+        return;
+    }
+
+    hasLatest = GetLatestOtpHistoryVersion(&latestVersion, &lastAddr, &writeAddr);
+    if (hasLatest) {
+        printf("latest otp history version:%d.%d.%d at %#x\n",
+               latestVersion.major, latestVersion.minor, latestVersion.build, lastAddr);
+    } else {
+        printf("no valid otp history found\n");
+    }
+    if (hasLatest && CompareVersion(g_pendingOtpVersion, latestVersion) <= 0) {
+        printf("skip otp history write: pending version is not newer than latest otp\n");
+        g_shouldWriteOtpVersionHistory = false;
+        return;
+    }
+
+    if (writeAddr >= OTP_ADDR_WEB_AUTH_RSA_KEY) {
+        printf("skip otp history write: otp history area is full\n");
+        g_shouldWriteOtpVersionHistory = false;
+        return;
+    }
+
+    versionWord = PackVersionToWord(g_pendingOtpVersion);
+    ret = WriteOtpData(writeAddr, (const uint8_t *)&versionWord, sizeof(versionWord));
+    if (ret != 0) {
+        printf("write otp history failed,ret=%d,addr=%#x\n", ret, writeAddr);
+        g_shouldWriteOtpVersionHistory = false;
+        return;
+    }
+
+    OTP_PowerOn();
+    memcpy(&verifyWord, (uint8_t *)((uint32_t)writeAddr), sizeof(verifyWord));
+    if (verifyWord != versionWord) {
+        printf("verify otp history failed,addr=%#x,w=%#x,r=%#x\n", writeAddr, versionWord, verifyWord);
+        g_shouldWriteOtpVersionHistory = false;
+        return;
+    }
+
+    printf("otp history recorded at %#x: %d.%d.%d (%#x)\n",
+           writeAddr, g_pendingOtpVersion.major, g_pendingOtpVersion.minor, g_pendingOtpVersion.build, versionWord);
+    g_shouldWriteOtpVersionHistory = false;
 }
 
 static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize, bool write)
@@ -515,6 +772,7 @@ static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePa
     FIL fp;
     int32_t ret;
     uint32_t fileSize, readSize, i, offset, cmpsdSize, decmpsdSize, writeAddr, percent;
+    uint32_t decmpsdRet;
     sha256_context ctx;
     qlz_state_decompress qlzState = {0};
     static uint32_t lastPercent = 101;
@@ -543,22 +801,43 @@ static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePa
     f_lseek(&fp, headSize);
     writeAddr = APP_ADDR;
     for (i = headSize; i < fileSize;) {
+        uint32_t blockStart = i;
+        uint32_t blockRemain;
         ret = f_read(&fp, g_fileUnit, 16, (UINT *)&readSize);
-        if (ret) {
+        if (ret || readSize != 16) {
             FatfsError((FRESULT)ret);
             f_close(&fp);
             return ERR_UPDATE_CHECK_FILE_EXIST;
         }
         i += readSize;
+        blockRemain = fileSize - blockStart;
         cmpsdSize = qlz_size_compressed((char *)g_fileUnit);
         decmpsdSize = qlz_size_decompressed((char *)g_fileUnit);
+        if (cmpsdSize < 16 || cmpsdSize > sizeof(g_fileUnit) ||
+                decmpsdSize == 0 || decmpsdSize > sizeof(g_dataUnit) ||
+                cmpsdSize > blockRemain || (decmpsdSize % 4096) != 0) {
+            printf("invalid block size in update, c=%d,d=%d,remain=%d,start=%d\r\n",
+                   cmpsdSize, decmpsdSize, blockRemain, blockStart);
+            f_close(&fp);
+            return ERR_UPDATE_CHECK_CRC_FAILED;
+        }
+        if (write && (writeAddr + decmpsdSize > APP_SIGNATURE_ADDR)) {
+            printf("write range overflow, addr=%#x,size=%d\r\n", writeAddr, decmpsdSize);
+            f_close(&fp);
+            return ERR_UPDATE_CHECK_CRC_FAILED;
+        }
         ret = f_read(&fp, g_fileUnit + 16, cmpsdSize - 16, (UINT *)&readSize);
-        if (ret) {
+        if (ret || readSize != cmpsdSize - 16) {
             FatfsError((FRESULT)ret);
             f_close(&fp);
             return ERR_UPDATE_CHECK_FILE_EXIST;
         }
-        qlz_decompress((char *)g_fileUnit, g_dataUnit, &qlzState);
+        decmpsdRet = qlz_decompress((char *)g_fileUnit, g_dataUnit, &qlzState);
+        if (decmpsdRet != decmpsdSize) {
+            printf("decompress size mismatch:%d,%d\r\n", decmpsdRet, decmpsdSize);
+            f_close(&fp);
+            return ERR_UPDATE_CHECK_CRC_FAILED;
+        }
         sha256_hash(&ctx, g_dataUnit, decmpsdSize);
         for (offset = 0; offset < decmpsdSize; offset += 4096) {
             if (write) {
@@ -584,42 +863,68 @@ static int32_t ReadOtaFileAndCheck(const OtaFileInfo_t *info, const char *filePa
     uint8_t publickey[65] = {0};
     GetUpdatePubKey(publickey);
     if (memcmp(content_hash, info->originalHash, 32) == 0) {
-        if (verify_frimware_signature(info->originalSignature, content_hash, publickey)) {
+        if (verify_frimware_signature((char *)info->originalSignature, content_hash, publickey)) {
             printf("check signature ok\r\n");
             char *signature = pvPortMalloc(4096);
+            if (signature == NULL) {
+                f_close(&fp);
+                return ERR_UPDATE_CHECK_SIGNATURE_FAILED;
+            }
+            memset(signature, 0, 4096);
             memcpy(signature, info->originalSignature, sizeof(info->originalSignature));
             if (write) {
-                QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+                QspiFlashEraseAndWrite(APP_SIGNATURE_ADDR, (const uint8_t *)signature, 4096);
             }
             printf("signature:%s\r\n", signature);
             memset(signature, 0, 4096);
             vPortFree(signature);
+            f_close(&fp);
             return SUCCESS_CODE;
         } else {
             printf("check signature failed\r\n");
+            f_close(&fp);
             return ERR_UPDATE_CHECK_SIGNATURE_FAILED;
         }
     } else {
         printf("update failed\r\n");
         char *signature = pvPortMalloc(4096);
+        if (signature == NULL) {
+            f_close(&fp);
+            return ERR_UPDATE_CHECK_CRC_FAILED;
+        }
+        memset(signature, 0, 4096);
         for (int i = 0; i < 256; i++) {
             signature[i] = i;
         }
         if (write) {
-            QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+            QspiFlashEraseAndWrite(APP_SIGNATURE_ADDR, (const uint8_t *)signature, 4096);
         }
+        memset(signature, 0, 4096);
         vPortFree(signature);
+        f_close(&fp);
         return ERR_UPDATE_CHECK_CRC_FAILED;
     }
 #else
     char *signature = pvPortMalloc(4096);
+    if (signature == NULL) {
+        f_close(&fp);
+        return ERR_UPDATE_CHECK_SIGNATURE_FAILED;
+    }
+    memset(signature, 0, 4096);
     memcpy(signature, info->originalSignature, sizeof(info->originalSignature));
-    QspiFlashEraseAndWrite(APP_END_ADDR - 4096, signature, 4096);
+    QspiFlashEraseAndWrite(APP_SIGNATURE_ADDR, (const uint8_t *)signature, 4096);
     printf("signature:%s\r\n", signature);
     memset(signature, 0, 4096);
     vPortFree(signature);
 #endif
+    f_close(&fp);
     return SUCCESS_CODE;
+}
+
+void QspiFlashWriteFF(uint32_t addr, uint32_t size)
+{
+    memset(g_fileUnit, 0xFF, sizeof(g_fileUnit));
+    QspiFlashEraseAndWrite(addr, g_fileUnit, size);
 }
 
 static int32_t UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath, uint32_t headSize)
@@ -635,17 +940,17 @@ static int32_t UpdateFromOtaFile(const OtaFileInfo_t *info, const char *filePath
 static void GetUpdatePubKey(uint8_t *pubKey)
 {
     uint8_t data[UPDATE_PUB_KEY_LEN];
-    uint32_t addr;
+    int32_t addr;
 
     pubKey[0] = 4;
     OTP_PowerOn();
-    for (addr = OTP_ADDR_UPDATE_PUB_KEY + 1024 - UPDATE_PUB_KEY_LEN; addr >= OTP_ADDR_UPDATE_PUB_KEY; addr -= UPDATE_PUB_KEY_LEN) {
-        memcpy(data, (uint8_t *)addr, UPDATE_PUB_KEY_LEN);
+    for (addr = OTP_ADDR_UPDATE_PUB_KEY + 1024 - UPDATE_PUB_KEY_LEN; addr >= (int32_t)OTP_ADDR_UPDATE_PUB_KEY; addr -= UPDATE_PUB_KEY_LEN) {
+        memcpy(data, (uint8_t *)((uint32_t)addr), UPDATE_PUB_KEY_LEN);
         // PrintArray("read pub key", data, UPDATE_PUB_KEY_LEN);
         if (CheckAllFF(data, UPDATE_PUB_KEY_LEN) == false) {
             if (CheckEntropy(data, UPDATE_PUB_KEY_LEN)) {
                 // Found
-                printf("found,addr=0x%X\n", addr);
+                printf("found,addr=0x%X\n", (uint32_t)addr);
                 memcpy(pubKey + 1, data, UPDATE_PUB_KEY_LEN);
                 memset(data, 0, UPDATE_PUB_KEY_LEN);
                 return;
@@ -671,19 +976,20 @@ static bool VerifyFirmwareSignature(const uint8_t *hash)
         return false;
     }
 
-    memcpy(signature, (uint32_t *)(APP_END_ADDR - 4096), 256);
-    if (CheckAllFF(signature, 256)) {
+    memset(signature, 0, 256 + 1);
+    memcpy(signature, (uint32_t *)(APP_SIGNATURE_ADDR), 256);
+    signature[256] = '\0';
+    if (CheckAllFF((const uint8_t *)signature, 256)) {
         vPortFree(signature);
         return false;
     }
-    bool isOK = verify_frimware_signature(signature, hash, publickey);
+    bool isOK = verify_frimware_signature(signature, (uint8_t *)hash, publickey);
     vPortFree(signature);
 
     return isOK;
 }
 #endif
 
-#if 1
 static uint32_t BinarySearchLastNonFFSector(void)
 {
     uint8_t *buffer = pvPortMalloc(SECTOR_SIZE);
@@ -756,8 +1062,8 @@ void InitBootParam(void)
 {
     BootParam_t bootParam;
     Gd25FlashReadBuffer(BOOT_SECURE_PARAM_FLAG, (uint8_t *)&bootParam, sizeof(bootParam));
-    if ((CheckAllFF((uint8_t *)&bootParam, sizeof(bootParam)) || CheckAllZero((uint8_t *)&bootParam, sizeof(bootParam))) && 
-         !GetFactoryResult()) {
+    if ((CheckAllFF((uint8_t *)&bootParam, sizeof(bootParam)) || CheckAllZero((uint8_t *)&bootParam, sizeof(bootParam))) &&
+            !GetFactoryResult()) {
         printf("bootParam is all FF or all 0\n");
         memcpy(g_bootParam.bootCheckFlag, g_integrityFlag, sizeof(g_bootParam.bootCheckFlag));
         memcpy(g_bootParam.recoveryModeSwitch, g_integrityFlag, sizeof(g_bootParam.recoveryModeSwitch));
@@ -774,7 +1080,7 @@ bool GetBootSecureCheckFlag(void)
 bool GetRecoveryModeFlag(void)
 {
     PrintArray("check bootParam.recoveryModeSwitch", g_bootParam.recoveryModeSwitch, sizeof(g_bootParam.recoveryModeSwitch));
-    return (memcmp(g_bootParam.recoveryModeSwitch, g_integrityFlag, sizeof(g_integrityFlag)) == 0 || 
+    return (memcmp(g_bootParam.recoveryModeSwitch, g_integrityFlag, sizeof(g_integrityFlag)) == 0 ||
             memcmp(g_bootParam.recoveryModeSwitch, g_recoveryModeFlag, sizeof(g_recoveryModeFlag)) == 0);
 }
 
@@ -876,16 +1182,22 @@ static bool CalculateFirmwareHash(uint8_t *hash, bool showProgress)
 void JumpToApp(void)
 {
     typedef int (*jumpApp)(void);
-    volatile int *ptr = (int *)APP_ADDR;
+    volatile uint32_t *ptr = (uint32_t *)APP_ADDR;
     jumpApp app;
+    uint32_t msp;
+    uint32_t resetHandler;
 
-    if (*ptr != 0xffffffff) {
-        app = (jumpApp)(*(__IO uint32_t *)(APP_ADDR + 4));
-        __disable_irq();
-        __set_MSP(*(__IO uint32_t *)APP_ADDR);
-
-        app();
+    msp = ptr[0];
+    resetHandler = ptr[1];
+    if (!IsValidAppVector(msp, resetHandler)) {
+        printf("invalid app vector,msp=%#x,reset=%#x\r\n", msp, resetHandler);
+        return;
     }
+
+    app = (jumpApp)resetHandler;
+    __disable_irq();
+    __set_MSP(msp);
+    app();
 }
 
 static void HandleFirmwareVerificationFailed(void)
@@ -948,11 +1260,36 @@ bool CalculateCheckSum(bool checkSum, const uint8_t *originalHash)
 
     return true;
 }
-#endif
 
 static uint32_t BytesToUint32BE(char *bytes)
 {
     return (uint32_t)bytes[0] << 24 | (uint32_t)bytes[1] << 16 | (uint32_t)bytes[2] << 8 | (uint32_t)bytes[3];
+}
+
+static bool IsAddressInRange(uint32_t addr, uint32_t start, uint32_t end)
+{
+    return (addr >= start) && (addr < end);
+}
+
+static bool IsValidAppVector(uint32_t msp, uint32_t resetHandler)
+{
+    uint32_t resetAddr = resetHandler & (~1U);
+    if ((msp == 0xFFFFFFFF) || (resetHandler == 0xFFFFFFFF)) {
+        return false;
+    }
+    if ((resetHandler & 1U) == 0) {
+        return false;
+    }
+    if ((msp & 0x3) != 0) {
+        return false;
+    }
+    if (!IsAddressInRange(msp, SRAM_START_ADDR, SRAM_END_ADDR)) {
+        return false;
+    }
+    if (!IsAddressInRange(resetAddr, APP_FLASH_START_ADDR, APP_FLASH_END_ADDR)) {
+        return false;
+    }
+    return true;
 }
 
 static bool IsHexChar(char c)
