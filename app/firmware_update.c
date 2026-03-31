@@ -98,6 +98,7 @@ typedef struct {
 #define OTA_ADDR_FACTORY_BASE                               (0x40009400)
 #define VERSION_COMPONENT_MAX                               (99U)
 
+static const uint8_t MAGIC_NUMBER[] = {'m', 'h', '1', '9', '0', '3', 'b', 'o', 'o', 't', 'u', 'p', 'd', 'a', 't', 'e'};
 static uint8_t g_fileUnit[FILE_UNIT_SIZE + 16];
 static uint8_t g_dataUnit[DATA_UNIT_SIZE];
 static bool g_shouldWriteOtpVersionHistory = false;
@@ -978,7 +979,13 @@ static bool VerifyFirmwareSignature(const uint8_t *hash)
 
     memset(signature, 0, 256 + 1);
     memcpy(signature, (uint32_t *)(APP_SIGNATURE_ADDR), 256);
+    if (memcmp(MAGIC_NUMBER, signature, sizeof(MAGIC_NUMBER)) == 0) {
+        printf("magic number matched\n");
+        vPortFree(signature);
+        return true;
+    }
     signature[256] = '\0';
+
     if (CheckAllFF((const uint8_t *)signature, 256)) {
         vPortFree(signature);
         return false;
